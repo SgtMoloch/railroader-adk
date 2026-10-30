@@ -1,0 +1,32 @@
+[
+  {
+    "identifier": "example/truck-emd-blomberg",
+    "metadata": {
+      "name": "EMD Blomberg"
+    },
+    "definition": {
+      "kind": "Truck",
+      "modelIdentifier": "./truck-emd-blomberg"
+    }
+  },
+  {
+    "identifier": "example/truck-emd-flexicoil",
+    "metadata": {
+      "name": "EMD Flexicoil"
+    },
+    "definition": {
+      "kind": "Truck",
+      "modelIdentifier": "./truck-emd-flexicoil"
+    }
+  },
+  {
+    "identifier": "example/truck-alco-aaaride",
+    "metadata": {
+      "name": "ALCO AAR Ride"
+    },
+    "definition": {
+      "kind": "Truck",
+      "modelIdentifier": "./truck-alco-aaaride"
+    }
+  }
+]
