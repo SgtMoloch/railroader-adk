@@ -399,7 +399,7 @@ namespace Railroader.AssetTools
 
         private void DrawContents()
         {
-            EditorGUILayout.LabelField("Railroader Definition Starter v3.0 Beta 1.3", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Railroader Definition Starter v3.0 Beta 1.5.2", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("Creates a starter definition for an existing root prefab. " +
                 "The current 0.6 game expects a JSON object containing an 'objects' array, " +
                 "despite the published docs showing a top-level array. " +
@@ -494,19 +494,25 @@ namespace Railroader.AssetTools
                     if (string.Equals(chosenSource.Kind, "Car", StringComparison.OrdinalIgnoreCase))
                     {
                         copyRelatedCarStyles = EditorGUILayout.ToggleLeft(
-                            "Also copy linked CarStyles / ReportingMarks", copyRelatedCarStyles);
+                            "Copy / create CarStyles and ReportingMarks", copyRelatedCarStyles);
                         if (copyRelatedCarStyles)
-                            EditorGUILayout.HelpBox("Existing livery styles keep their own reporting marks " +
-                                "and numbering series. For NEW styles, enter the destination's reporting " +
-                                "mark below; the source's series is copied as a starting point. " +
-                                "Any existing mark definitions are reused.", MessageType.Info);
+                            EditorGUILayout.HelpBox(hasStyles
+                                ? "Existing livery styles keep their own marks and numbering series. " +
+                                  "Enter a destination mark for new styles; source style settings " +
+                                  "are copied as a starting point."
+                                : "The source has no linked CarStyle. Enter a reporting mark for " +
+                                  "any destination that needs a new CarStyle and ReportingMark. " +
+                                  "Leave it blank to copy only the car definition.", MessageType.Info);
                     }
                     bool marksValid = true;
                     var related = new RailroaderDefinitionCopier.RelatedCopyOptions {
                         IncludeCarStyles = string.Equals(chosenSource.Kind, "Car", StringComparison.OrdinalIgnoreCase) &&
                             copyRelatedCarStyles
                     };
-                    if (related.IncludeCarStyles)
+                    bool needsStyleMarkInputs = related.IncludeCarStyles || targets.Any(target =>
+                        roadOverrides.TryGetValue(target.Id, out var numbers) &&
+                        (numbers.HasRange || numbers.OverrideDecalAppearance));
+                    if (needsStyleMarkInputs)
                     {
                         foreach (var target in targets)
                         {
@@ -525,10 +531,13 @@ namespace Railroader.AssetTools
                                 entry = EditorGUILayout.TextField("Mark for " + target.Prefab, entry);
                                 targetReportingMarks[target.Id] = entry;
                                 related.TargetMarks[target.Id] = entry;
-                                // A mark is needed to clone a source style. When no source
-                                // style exists, it is only needed if a new range is requested.
-                                bool needsMark = hasStyles ||
-                                    (roadOverrides.TryGetValue(target.Id, out var road) && road.HasRange);
+                                // A mark is required for cloning an existing source style, or
+                                // for numbering/decal overrides that need a destination style.
+                                // If the source has no style, an optional supplied mark alone
+                                // is enough to create a minimal CarStyle and ReportingMark.
+                                bool needsMark = (related.IncludeCarStyles && hasStyles) ||
+                                    (roadOverrides.TryGetValue(target.Id, out var road) &&
+                                        (road.HasRange || road.OverrideDecalAppearance));
                                 if (string.IsNullOrWhiteSpace(entry) && needsMark)
                                 {
                                     marksValid = false;
@@ -537,16 +546,16 @@ namespace Railroader.AssetTools
                         }
                         if (!marksValid)
                             EditorGUILayout.HelpBox("Enter a reporting mark for each new livery style " +
-                                "before copying. Or disable linked-style copying.", MessageType.Warning);
+                                "that needs copying or a numbering/decal override.", MessageType.Warning);
                     }
                     if (chosenSource.Kind == "Car" || chosenSource.Kind == "DieselLocomotive")
                     {
                         EditorGUILayout.Space();
-                        EditorGUILayout.LabelField("Optional road-number overrides (per destination)",
+                        EditorGUILayout.LabelField("Optional numbering and decal overrides (per destination)",
                             EditorStyles.boldLabel);
-                        EditorGUILayout.HelpBox("Leave blank to inherit the copied value. Range overrides " +
-                            "apply to CarStyle entries, not to the Car definition. Provide a series name " +
-                            "and start/end if the source has no range.", MessageType.None);
+                        EditorGUILayout.HelpBox("Leave blank to inherit the copied value. Numbering series " +
+                            "keys belong to CarStyle.carSeries, not the car's reporting mark. " +
+                            "Provide a key and start/end to create a new series.", MessageType.None);
                         foreach (var target in targets)
                         {
                             if (!roadOverrides.TryGetValue(target.Id, out var numbers))
@@ -558,9 +567,10 @@ namespace Railroader.AssetTools
                             numbers.BaseRoadNumber = EditorGUILayout.TextField("Base road number", numbers.BaseRoadNumber);
                             if (chosenSource.Kind == "Car")
                             {
-                                numbers.SeriesName = EditorGUILayout.TextField("Series name", numbers.SeriesName);
+                                numbers.SeriesName = EditorGUILayout.TextField("Numbering series key", numbers.SeriesName);
                                 numbers.SeriesStart = EditorGUILayout.TextField("Range start", numbers.SeriesStart);
                                 numbers.SeriesEnd = EditorGUILayout.TextField("Range end", numbers.SeriesEnd);
+                                RailroaderDefinitionOptionsUI.DrawDecalFinish(numbers);
                             }
                             related.RoadNumbers[target.Id] = numbers;
                         }

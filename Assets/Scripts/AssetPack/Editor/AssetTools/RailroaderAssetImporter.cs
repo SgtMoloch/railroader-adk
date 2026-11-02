@@ -37,10 +37,11 @@ namespace Railroader.AssetTools
         private int copySourceIndex;
         private bool copyLinkedCarStyles = true;
         private string newReportingMark = "";
-        private string copiedBaseRoadNumber = "";
         private string copiedSeriesName = "";
         private string copiedSeriesStart = "";
         private string copiedSeriesEnd = "";
+        private readonly RailroaderDefinitionCopier.RoadNumberOverrides appearanceOverrides =
+            new RailroaderDefinitionCopier.RoadNumberOverrides();
         private RailroaderStarterDefinitionKind definitionKind = RailroaderStarterDefinitionKind.Truck;
         private string definitionName = "";
         private bool buildMaterials;  // Intentionally DEFAULT OFF, per the importer workflow.
@@ -74,9 +75,11 @@ namespace Railroader.AssetTools
 
         private void DrawContents()
         {
-            EditorGUILayout.LabelField("Railroader Asset Importer v3.0 Beta 1.3", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Railroader Asset Importer v3.0 Beta 1.5.3", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("Import a new FBX/OBJ, or create an additional livery from an FBX " +
                 "already in this pack. Asset packs must first be created in the ADK.", MessageType.Info);
+            if (GUILayout.Button("Reimport an Existing FBX / Textures..."))
+                RailroaderModelReimport.Open();
             string priorPack = pack;
             pack = RailroaderAssetPackPicker.Draw("Asset Pack", pack);
             bool validPack = RailroaderAssetPackTools.ValidPack(pack);
@@ -102,9 +105,12 @@ namespace Railroader.AssetTools
             if (importMode != lastDisplayedMode)
             {
                 lastDisplayedMode = importMode;
-                if (importMode == RailroaderImportMode.NewLiveryFromExistingModel && models.Count > 0)
+                if (importMode == RailroaderImportMode.NewLiveryFromExistingModel)
                 {
-                    prefabName = Path.GetFileNameWithoutExtension(models[0]) + "_Livery";
+                    // The original model usually already owns <model>.prefab. Don't add
+                    // an unwanted _Livery suffix or prefill a conflicting prefab name.
+                    // A new repaint needs a deliberate, unique name from the creator.
+                    prefabName = "";
                 }
                 else if (importMode == RailroaderImportMode.NewModel && !string.IsNullOrWhiteSpace(sourceModel))
                 {
@@ -168,9 +174,9 @@ namespace Railroader.AssetTools
                     "named <prefab-name>.prefab (an FBX-based prefab variant). " +
                     "Import a second FBX with a different name to add another model.", MessageType.None);
             else
-                EditorGUILayout.HelpBox("Example: GP38_CSX, GP38_NS. Each gets Models/<livery>/Textures/ " +
-                    "and <livery>.prefab variants, while both reference the same original FBX. " +
-                    "Choose a unique name for a new livery.", MessageType.None);
+                EditorGUILayout.HelpBox("Enter a unique name, such as GP38_CSX or GP38_NS. " +
+                    "Each gets Models/<name>/Textures/ and <name>.prefab while both " +
+                    "reference the same original FBX. No _Livery suffix is added.", MessageType.None);
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Definitions", EditorStyles.boldLabel);
@@ -217,27 +223,34 @@ namespace Railroader.AssetTools
                         bool sourceHasStyles = RailroaderDefinitionCopier.HasLinkedStyles(pack,
                             sources[copySourceIndex].Id);
                         copyLinkedCarStyles = EditorGUILayout.ToggleLeft(
-                            "Copy linked CarStyle / ReportingMark (if present)", copyLinkedCarStyles);
+                            "Copy / create CarStyle and ReportingMark", copyLinkedCarStyles);
+                        newReportingMark = EditorGUILayout.TextField("New reporting mark", newReportingMark);
                         if (copyLinkedCarStyles)
                         {
-                            newReportingMark = EditorGUILayout.TextField("New reporting mark", newReportingMark);
                             EditorGUILayout.HelpBox(sourceHasStyles
-                                ? "Enter the new livery's reporting mark. Existing source numbering " +
-                                  "series is copied unless you override it below."
-                                : "The source has no style. If you enter a new road-number range, " +
-                                  "a matching CarStyle and ReportingMark can be created.", MessageType.Info);
+                                ? "Enter the new livery's reporting mark to copy its CarStyle. " +
+                                  "Source numbering and decal styles are inherited unless overridden below."
+                                : "The source has no linked CarStyle. Enter a reporting mark to " +
+                                  "create a new CarStyle and ReportingMark, even without numbering " +
+                                  "or decal overrides. Leave blank to create neither.", MessageType.Info);
                         }
                     }
-                    EditorGUILayout.LabelField("Optional road-number overrides", EditorStyles.boldLabel);
-                    copiedBaseRoadNumber = EditorGUILayout.TextField("Base road number", copiedBaseRoadNumber);
+                    EditorGUILayout.LabelField("Optional numbering and decal overrides", EditorStyles.boldLabel);
+                    if (definitionKind == RailroaderStarterDefinitionKind.Car ||
+                        definitionKind == RailroaderStarterDefinitionKind.DieselLocomotive)
+                    {
+                        EditorGUILayout.HelpBox("Use the single Base road number field in the starter settings " +
+                            "below. Leave it blank to inherit the selected definition's value.", MessageType.None);
+                    }
                     if (definitionKind == RailroaderStarterDefinitionKind.Car)
                     {
-                        copiedSeriesName = EditorGUILayout.TextField("Series name", copiedSeriesName);
+                        copiedSeriesName = EditorGUILayout.TextField("Numbering series key", copiedSeriesName);
                         copiedSeriesStart = EditorGUILayout.TextField("Series start", copiedSeriesStart);
                         copiedSeriesEnd = EditorGUILayout.TextField("Series end", copiedSeriesEnd);
-                        EditorGUILayout.HelpBox("Blank fields inherit the source. To create a numbering " +
-                            "series where none exists, provide a series name, both endpoints and a " +
-                            "reporting mark.", MessageType.None);
+                        EditorGUILayout.HelpBox("Series key is the name inside carSeries (e.g. ACFR), not " +
+                            "the reporting mark. Leave it blank to edit the only existing series. " +
+                            "For a new series, enter a key, start, end, and reporting mark.", MessageType.None);
+                        RailroaderDefinitionOptionsUI.DrawDecalFinish(appearanceOverrides);
                     }
                 }
                 else if (copyExistingDefinition)
@@ -504,14 +517,23 @@ namespace Railroader.AssetTools
                     {
                         copySourceIndex = Mathf.Clamp(copySourceIndex, 0, sources.Count - 1);
                         copySourceId = sources[copySourceIndex].Id;
-                        if (definitionKind == RailroaderStarterDefinitionKind.Car && copyLinkedCarStyles &&
-                            (RailroaderDefinitionCopier.HasLinkedStyles(pack, copySourceId) ||
-                             !string.IsNullOrWhiteSpace(copiedSeriesName) ||
-                             !string.IsNullOrWhiteSpace(copiedSeriesStart) ||
-                             !string.IsNullOrWhiteSpace(copiedSeriesEnd)) &&
-                            string.IsNullOrWhiteSpace(newReportingMark))
-                            throw new InvalidOperationException("Enter the new livery's reporting mark " +
-                                "or uncheck 'Copy linked CarStyle / ReportingMark too'.");
+                        if (definitionKind == RailroaderStarterDefinitionKind.Car)
+                        {
+                            bool copiesLinkedStyles = copyLinkedCarStyles &&
+                                RailroaderDefinitionCopier.HasLinkedStyles(pack, copySourceId);
+                            bool createsOrOverridesStyle = copiesLinkedStyles ||
+                                (copyLinkedCarStyles && !string.IsNullOrWhiteSpace(newReportingMark)) ||
+                                !string.IsNullOrWhiteSpace(copiedSeriesName) ||
+                                !string.IsNullOrWhiteSpace(copiedSeriesStart) ||
+                                !string.IsNullOrWhiteSpace(copiedSeriesEnd) ||
+                                appearanceOverrides.OverrideDecalAppearance;
+                            if (createsOrOverridesStyle)
+                            {
+                                // Reject malformed marks before copying any imported files.
+                                RailroaderDefinitionCopier.ValidateReportingMark(newReportingMark, cleanName);
+                            }
+                            RailroaderDefinitionCopier.ValidateDecalFinish(appearanceOverrides, cleanName);
+                        }
                     }
                 }
                 if (appendDefinitionEntry && !definitionsPresent && !createDefinitionsFile)
@@ -609,15 +631,21 @@ namespace Railroader.AssetTools
                         var related = new RailroaderDefinitionCopier.RelatedCopyOptions {
                             IncludeCarStyles = definitionKind == RailroaderStarterDefinitionKind.Car && copyLinkedCarStyles
                         };
-                        if (related.IncludeCarStyles)
+                        if (definitionKind == RailroaderStarterDefinitionKind.Car &&
+                            !string.IsNullOrWhiteSpace(newReportingMark))
                         {
+                            // Number/decal overrides may create a style even when linked-style
+                            // copying is disabled; they still need the destination mark.
                             related.TargetMarks[targetId] = newReportingMark;
                         }
                         related.RoadNumbers[targetId] = new RailroaderDefinitionCopier.RoadNumberOverrides {
-                            BaseRoadNumber = copiedBaseRoadNumber,
+                            BaseRoadNumber = definitionOptions.BaseRoadNumber,
                             SeriesName = copiedSeriesName,
                             SeriesStart = copiedSeriesStart,
-                            SeriesEnd = copiedSeriesEnd
+                            SeriesEnd = copiedSeriesEnd,
+                            OverrideDecalAppearance = appearanceOverrides.OverrideDecalAppearance,
+                            DecalColorHex = appearanceOverrides.DecalColorHex,
+                            DecalShininess = appearanceOverrides.DecalShininess
                         };
                         copiedSettingsAction = RailroaderDefinitionCopier.CopyToTargets(pack,
                             copySourceId, new[] { targetId }, false, related);

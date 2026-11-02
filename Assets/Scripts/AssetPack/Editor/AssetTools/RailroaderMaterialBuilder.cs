@@ -14,17 +14,21 @@ namespace Railroader.AssetTools
     public sealed class RailroaderMaterialBuilder : EditorWindow
     {
         private bool manualMode;
+        private int selectedTab;
         private string pack;
         private string manualTexturePath = "Assets/Textures";
         private GameObject manualModel;
         // Automatic (default) chooses the Railroader shader independently for each texture set.
         private RailroaderShaderSelection shaderSelection = RailroaderShaderSelection.Automatic;
         private Shader customShader;
-        private string status;
+        private string buildStatus;
+        private string refreshStatus;
         private int refreshTargetIndex;
         private string refreshPack;
         private string textureRefreshSource = "";
         private bool updateMaterialsAfterRefresh = true;
+        private Vector2 buildScroll;
+        private Vector2 refreshScroll;
 
         [MenuItem("Railroader/Material Builder")]
         public static void Open()
@@ -37,20 +41,32 @@ namespace Railroader.AssetTools
             pack = EditorPrefs.GetString("RailroaderTools.SelectedPack", "");
         }
 
-        private Vector2 windowScroll;
-
         private void OnGUI()
         {
-            using (var scroll = new EditorGUILayout.ScrollViewScope(windowScroll, GUILayout.ExpandHeight(true)))
+            EditorGUILayout.LabelField("Railroader Material Builder v3.0 Beta 1.5", EditorStyles.boldLabel);
+            selectedTab = GUILayout.Toolbar(selectedTab, new[] { "Build / Map Materials", "Reimport Textures" });
+            EditorGUILayout.Space();
+
+            if (selectedTab == 0)
             {
-                windowScroll = scroll.scrollPosition;
-                DrawContents();
+                using (var scroll = new EditorGUILayout.ScrollViewScope(buildScroll, GUILayout.ExpandHeight(true)))
+                {
+                    buildScroll = scroll.scrollPosition;
+                    DrawBuildTab();
+                }
+            }
+            else
+            {
+                using (var scroll = new EditorGUILayout.ScrollViewScope(refreshScroll, GUILayout.ExpandHeight(true)))
+                {
+                    refreshScroll = scroll.scrollPosition;
+                    DrawReimportTab();
+                }
             }
         }
 
-        private void DrawContents()
+        private void DrawBuildTab()
         {
-            EditorGUILayout.LabelField("Railroader Material Builder v3.0 Beta 1.3", EditorStyles.boldLabel);
             manualMode = GUILayout.Toolbar(manualMode ? 1 : 0, new[] { "ADK Asset Pack", "Manual" }) == 1;
             EditorGUILayout.Space();
             if (!manualMode)
@@ -66,6 +82,7 @@ namespace Railroader.AssetTools
                 manualModel = (GameObject)EditorGUILayout.ObjectField("FBX / OBJ model", manualModel,
                     typeof(GameObject), false);
             }
+
             RailroaderMaterialShaderUI.Draw(ref shaderSelection, ref customShader);
             using (new EditorGUI.DisabledScope(
                 (shaderSelection == RailroaderShaderSelection.Custom && customShader == null) ||
@@ -76,11 +93,11 @@ namespace Railroader.AssetTools
                 {
                     try
                     {
-                        status = RailroaderMaterialService.PreviewPack(pack);
+                        buildStatus = RailroaderMaterialService.PreviewPack(pack);
                     }
                     catch (Exception ex)
                     {
-                        status = "Preview failed: " + ex.Message;
+                        buildStatus = "Preview failed: " + ex.Message;
                         RailroaderEditorFeedback.ShowError("Material Preview", ex);
                     }
                 }
@@ -88,26 +105,39 @@ namespace Railroader.AssetTools
                 {
                     try
                     {
-                        status = manualMode
+                        buildStatus = manualMode
                             ? RailroaderMaterialService.BuildManual(manualTexturePath, shaderSelection,
                                 customShader, AssetDatabase.GetAssetPath(manualModel))
                             : RailroaderMaterialService.BuildPack(pack, shaderSelection, customShader);
-                        Debug.Log("[Railroader Material Builder] " + status);
+                        Debug.Log("[Railroader Material Builder] " + buildStatus);
                     }
                     catch (Exception ex)
                     {
-                        status = "Build failed: " + ex.Message;
+                        buildStatus = "Build failed: " + ex.Message;
                         RailroaderEditorFeedback.ShowError("Material Builder", ex);
                     }
                 }
             }
-            if (!manualMode && RailroaderAssetPackTools.ValidPack(pack))
+
+            if (!string.IsNullOrEmpty(buildStatus))
             {
-                DrawTextureRefresh();
+                EditorGUILayout.HelpBox(buildStatus, MessageType.Info);
             }
-            if (!string.IsNullOrEmpty(status))
+        }
+
+        private void DrawReimportTab()
+        {
+            pack = RailroaderAssetPackPicker.Draw("Asset Pack", pack);
+            if (!RailroaderAssetPackTools.ValidPack(pack))
             {
-                EditorGUILayout.HelpBox(status, MessageType.Info);
+                EditorGUILayout.HelpBox("Select an existing asset pack to reimport its textures.", MessageType.Info);
+                return;
+            }
+
+            DrawTextureRefresh();
+            if (!string.IsNullOrEmpty(refreshStatus))
+            {
+                EditorGUILayout.HelpBox(refreshStatus, MessageType.Info);
             }
         }
 
@@ -118,7 +148,7 @@ namespace Railroader.AssetTools
                 refreshPack = pack;
                 refreshTargetIndex = 0;
             }
-            EditorGUILayout.Space(12);
+
             EditorGUILayout.LabelField("Reimport Substance Painter Textures", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("Refresh one existing model or livery without importing the FBX " +
                 "or recreating its prefab. Existing texture .meta GUIDs are preserved. " +
@@ -129,6 +159,7 @@ namespace Railroader.AssetTools
                 EditorGUILayout.HelpBox("No models or liveries in this pack yet.", MessageType.None);
                 return;
             }
+
             refreshTargetIndex = Mathf.Clamp(refreshTargetIndex, 0, targets.Count - 1);
             refreshTargetIndex = EditorGUILayout.Popup("Model / Livery", refreshTargetIndex,
                 targets.Select(t => t.Label).ToArray());
@@ -147,8 +178,13 @@ namespace Railroader.AssetTools
                     }
                 }
             }
+
             updateMaterialsAfterRefresh = EditorGUILayout.ToggleLeft(
                 "Update existing .mat assets after copying (no FBX remap)", updateMaterialsAfterRefresh);
+            if (updateMaterialsAfterRefresh)
+            {
+                RailroaderMaterialShaderUI.Draw(ref shaderSelection, ref customShader);
+            }
             EditorGUILayout.HelpBox("Use the same texture-set names as before. Updating image files " +
                 "in place keeps existing material assignments. The optional .mat update changes " +
                 "texture slots/shaders but does not reimport or remap the FBX. " +
@@ -161,11 +197,11 @@ namespace Railroader.AssetTools
                 {
                     try
                     {
-                        status = RailroaderTextureRefresh.Prepare(target, textureRefreshSource).Describe();
+                        refreshStatus = RailroaderTextureRefresh.Prepare(target, textureRefreshSource).Describe();
                     }
                     catch (Exception ex)
                     {
-                        status = "Texture preview failed: " + ex.Message;
+                        refreshStatus = "Texture preview failed: " + ex.Message;
                     }
                 }
                 if (GUILayout.Button("Reimport Textures for Selected Model / Livery", GUILayout.Height(30)))
@@ -177,14 +213,14 @@ namespace Railroader.AssetTools
                             plan.Describe() + "\n\nExisting textures will be overwritten in place. " +
                             "FBX and prefab assets will not be replaced.", "Reimport", "Cancel"))
                         {
-                            status = RailroaderTextureRefresh.Execute(plan, updateMaterialsAfterRefresh,
+                            refreshStatus = RailroaderTextureRefresh.Execute(plan, updateMaterialsAfterRefresh,
                                 shaderSelection, customShader);
-                            Debug.Log("[Railroader Material Builder] " + status);
+                            Debug.Log("[Railroader Material Builder] " + refreshStatus);
                         }
                     }
                     catch (Exception ex)
                     {
-                        status = "Texture refresh failed: " + ex.Message;
+                        refreshStatus = "Texture refresh failed: " + ex.Message;
                         RailroaderEditorFeedback.ShowError("Material Builder", ex);
                     }
                 }

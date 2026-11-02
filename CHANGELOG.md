@@ -1,3 +1,57 @@
+# v3.0 Beta 1.5.3 — In-place FBX / Texture Reimport (test build)
+
+- Added **Railroader → Model Reimport** with an Asset Importer shortcut.
+- Keeps the existing imported FBX asset path and `.meta` GUID; **no prefab recreation or authoring prefab edits**.
+- Optional model/livery-scoped Painter texture refresh using the existing refresh service.
+- Defaults to preserving all `.mat` settings and prefab overrides; can optionally refresh `.mat` assets.
+- Previews linked prefabs, backs up touched files outside Assets, and warns if the FBX object/mesh/material names change.
+- Still requires an in-Unity test; Unity may lose overrides when source FBX hierarchies or material slot names change.
+
+See `MODEL_REIMPORT_BETA1.5.3.md`.
+
+---
+
+# v3.0 Beta 1.5.2 — Shorter style IDs and clean livery names
+
+- **No duplicate reporting marks in new CarStyle IDs.** The ID generator removes the destination's reporting mark from the beginning of the sanitized model identifier before appending it, e.g. `freeman/bnsfh351` + `BNSF` now generates `freeman/style.h351bnsf`, not `freeman/style.bnsfh351bnsf`. It also avoids appending the same mark again when the model name already ends with it. The existing model-specific collision numbering (`-2`, `-3`, ...) still applies.
+- **No automatic `_Livery` name.** Switching to **New Livery (Reuse FBX)** now starts with a blank editable name rather than `<fbx>_Livery`. The user enters an intentional unique name because `<fbx>.prefab` is normally already taken by the original model. Generated root prefab, model-folder, and definition names follow the entered name without an added suffix.
+- **Backwards compatible:** Existing prefabs, filenames, `.meta` GUIDs, `LiverySource.json` manifests, definitions, and style IDs are never renamed. Re-running a copy leaves existing style IDs untouched. The `_Livery` removal applies to future generated names only; it does not strip characters that creators intentionally enter.
+- Full package based on Beta 1.5.1, retaining Material Builder's two tabs and reporting mark creation fix. No Beta 1.6 decal-preview code. Static package checks only; requires Unity testing.
+
+---
+
+# v3.0 Beta 1.5.1 — Independent reporting marks and model-specific style IDs
+
+- **Create marks without a source CarStyle:** In Asset Importer and Definition Starter, enable linked-style copying/creation and enter a destination reporting mark. If the source has no linked CarStyle and the destination has none, the copy now creates a minimal CarStyle **and** ReportingMark even with no numbering-range or decal-finish overrides. Leaving the mark blank still copies only the car definition. Existing destination styles are left alone.
+- **Model-prefixed new style identifiers:** Newly created style IDs use `<namespace>/style.<destination-car-name><reporting-mark>`, e.g. `freeman/style.ipdboxcaratsf` instead of `freeman/style.atsf`. Two different car models can share `ATSF` without reusing the same style identifier; a numeric `-2`, `-3`, ... suffix handles true collisions. Existing CarStyle IDs are not renamed or migrated.
+- **Keep reporting marks shared:** The separate `ReportingMark` object (`freeman/ATSF`, for example) is still reused for the same mark in a pack; only the CarStyle IDs need to be model-specific.
+- **Importer validation:** Invalid marks are rejected before source files are copied; numbering/decal overrides can still use the entered destination mark even when the linked-style copy option is disabled.
+- Built directly from Beta 1.5; **no Beta 1.6 decal preview functionality**. All original `.meta` GUID files are preserved. Source/package validation only; Unity and game tests outstanding.
+
+---
+
+# v3.0 Beta 1.5 — Material Builder tabs
+
+- Split **Railroader → Material Builder** into two top-level tabs: **Build / Map Materials** and **Reimport Textures**.
+- The Build / Map Materials tab retains the existing **ADK Asset Pack / Manual** modes, shader selection, preview and material-building actions.
+- Reimport Textures now has its own asset-pack selector, model/livery target selector, Substance Painter folder browse, preview, and reimport action. The material shader selector appears on this tab when **Update existing .mat assets** is checked.
+- The selected asset pack and shader settings are shared across both tabs; status messages are kept separate so a build result does not appear under Reimport (or vice versa).
+- The tab bar stays visible at the top, and each tab has independent scrolling. This is a UI-only change: no FBX import/remap, prefab, definition, material-service or texture-copy logic was modified.
+- Uncompiled Unity integration test build. Existing Unity `.meta` GUIDs are unchanged.
+
+---
+
+# v3.0 Beta 1.4 — Numbering UI and decal finish
+
+- **Single Base road number field in the Asset Importer:** removed the duplicate copy-only text box. The existing optional field in the definition defaults section now also acts as the copy override (blank means inherit the source). The Definition Starter's separate new-definition form and per-destination bulk-copy fields remain intentionally distinct.
+- **Clarified numbering series key:** the UI now calls it **Numbering series key**, e.g. `ACFR` in `carSeries: {"ACFR": {"start":"7703","end":"9850"}}`. This is not the ReportingMark field; when one existing series exists, leave the key empty to update it. With no existing series, provide a key, start, end, and reporting mark.
+- **Optional decal finish override** during import-time or manual Car definition copying. When enabled, an editable `#RRGGBB` color plus a 0.0–1.0 shininess slider produce `CarStyle.definition.styles.Decal.color: "smooth(#222222, 0.0)"` (the default preview). The numeric fraction is serialized with invariant decimal separator; always uses `smooth(...)`.
+- **Safe by default:** finish override is OFF, preserving the source/destination style behavior from Beta 1.3. If enabled, overwrites ONLY the `color` field of the `Decal` style class, preserving other Decal fields, other style classes, target-specific reporting marks and numbering series. If a style is missing, can create a minimal linked CarStyle/ReportingMark when given a valid mark, even if the source has none. Invalid colors and out-of-range numbers fail before files are written.
+- **Scope:** The `Decal` style class may affect both reporting-mark and road-number decals, not individual physical materials. This does not generate other gameplay components or rewrite existing prefab assets.
+- No change to Colorizer, Animation Builder, material mappings, prefab variants, or public Unity-serialized components. Uncompiled Unity integration test build.
+
+---
+
 # v3.0 Beta 1.3 — Import, Road Numbers & User-Friendly Errors
 
 - **Importer no longer adds prefabs to the active scene.** Removed the scene-placement/replacement checkboxes, call and now-unused helper. It still saves an FBX-based Prefab Variant in the chosen pack.

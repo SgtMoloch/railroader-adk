@@ -1,3 +1,85 @@
+# v3.0 Beta 1.5.3 — In-place FBX / Texture Reimport (test build)
+
+- Added **Railroader → Model Reimport** with an Asset Importer shortcut.
+- Keeps the existing imported FBX asset path and `.meta` GUID; **no prefab recreation or authoring prefab edits**.
+- Optional model/livery-scoped Painter texture refresh using the existing refresh service.
+- Defaults to preserving all `.mat` settings and prefab overrides; can optionally refresh `.mat` assets.
+- Previews linked prefabs, backs up touched files outside Assets, and warns if the FBX object/mesh/material names change.
+- Still requires an in-Unity test; Unity may lose overrides when source FBX hierarchies or material slot names change.
+
+See `MODEL_REIMPORT_BETA1.5.3.md`.
+
+## Beta 1.5.3 — new model reimport checks
+
+1. Confirm **Railroader → Model Reimport** opens and the Asset Importer shortcut opens the same window.
+2. Select an existing FBX with at least two prefabs/liveries that refer to it; verify dependent prefabs listed before replacing anything.
+3. Reimport changed geometry with the *same* hierarchy, names, material slots and pivot; confirm model appears updated in all prefabs without losing BoxColliders, Colorizer settings, renderer material assignments, animations or any authoring changes.
+4. Reimport Painter textures for **one** livery and verify other liveries are unaffected. Leave material rebuilding off to preserve custom colors.
+5. Confirm the preflight warns about changed hierarchy/materials after import and writes a recovery copy into Library. Test a renamed FBX mesh only in a disposable project; Unity overrides may detach.
+6. Check that Definitions.json and original `.prefab` files were not rewritten; record prefab GUIDs before/after.
+7. Confirm opening Material Builder still shows the original Beta 1.5 tabs and CarStyle/ReportingMark creation works as in Beta 1.5.2.
+
+---
+
+# v3.0 Beta 1.5.2 — ID generation and livery defaults
+
+1. In a test asset pack, copy/create the CarStyle for destination `freeman/bnsfh351` with reporting mark `BNSF`; verify the newly generated ID is `freeman/style.h351bnsf`.
+2. Repeat with destination `freeman/h351bnsf` and mark `BNSF`; expect the same base ID (or a numbered suffix if that ID already exists). No `bnsf` duplication.
+3. Copy a car without the reporting mark embedded in its identifier, e.g. `freeman/ipdboxcar` with `ATSF`; expect `freeman/style.ipdboxcaratsf`.
+4. Verify a second new style with the same identifier gets an incremental `-2` suffix and existing style IDs are unchanged on subsequent copies.
+5. In Asset Importer, switch to **New Livery (Reuse FBX)**. The new livery name field should be blank, not `<model>_Livery`. Enter a unique name, import, and verify that the prefab, `Models/<name>/` folder and definition identifier use that exact name.
+6. Open an older livery with `_Livery` in its existing name. Verify it still loads and its prefab, manifest and definition references have not been renamed.
+7. Verify Beta 1.5 Material Builder tabs and the Beta 1.5.1 mark creation workflow still work. No Decal Preview window should be present.
+
+**Note:** Source/package checks can be run outside Unity, but compiling and in-editor testing are required before considering this validated.
+
+---
+
+# v3.0 Beta 1.5.1 — Reporting marks and style identifier smoke tests
+
+**Use a backed-up asset pack containing real root prefabs and a `{ "objects": [...] }` Definitions.json. Test in Unity and Railroader.**
+
+1. **Importer, source without style:** Copy a Car definition from a car that has no linked CarStyle. Enable **Copy / create CarStyle and ReportingMark**, enter `ATSF`, and leave series start/end and decal overrides blank. After import, confirm one new CarStyle `freeman/style.ipdboxcaratsf` (for a destination `freeman/ipdboxcar`) with `carIdentifiers: ["freeman/ipdboxcar"]` and `reportingMark: "ATSF"`, and one ReportingMark `freeman/ATSF`.
+2. **Manual bulk copy, source without style:** In Definition Starter, copy the same source into another unstyled car, enter its reporting mark, and verify that a CarStyle and ReportingMark are created without range/finish overrides. Repeat with a blank mark: no new style or mark should be generated.
+3. **Two cars, same mark:** Create styles for two different cars with `ATSF`. Verify distinct `freeman/style.<car>atsf` IDs, links to the correct individual car, and exactly one `freeman/ATSF` ReportingMark.
+4. **Repeat / collision:** Copy settings a second time. Existing style IDs should be kept and no duplicates added. If the proposed model-prefixed style ID is already occupied by a different definition, new IDs should receive `-2`, `-3`, etc. Existing `freeman/style.atsf` IDs must not be renamed.
+5. **Source with style:** Verify the original linked-style copying behavior, preservation of existing destination reporting marks and numbering series, and that a new target clones the source style rules with the new model-prefixed ID.
+6. **Override with style copy disabled:** Disable linked style copying, set an explicit new mark, and provide a numbering range or decal finish. Confirm that a valid style is still created and uses the entered destination mark.
+7. **Invalid mark / cancel:** Try `AT-SF` or an empty required mark and confirm a clear validation error before the imported model's source files are written. Cancel manual bulk-copy confirmation and confirm no `Definitions.json` edits. Successful copies should produce backups.
+8. **Beta 1.5 regression:** Check that both Material Builder tabs and the other original tools remain present and that no experimental Decal Preview window was added.
+
+**Not compiled/tested in Unity by this package build.**
+
+---
+
+# v3.0 Beta 1.5 — Material Builder tab checks
+
+1. Open **Railroader → Material Builder**. Confirm top-level tabs are **Build / Map Materials** and **Reimport Textures**.
+2. On **Build / Map Materials**, confirm **ADK Asset Pack / Manual**, shader selection, Preview Pack, and Build / Update Materials still behave as before.
+3. Switch to **Reimport Textures**. Confirm it shows **Asset Pack**, target **Model / Livery**, Painter export folder, material-update checkbox, and both preview/reimport buttons. No FBX chooser should be required.
+4. Try a multi-model pack with a shared-FBX livery. Confirm the selected target's textures are replaced in place, with Unity `.meta` GUIDs unchanged. Check that other liveries and the shared FBX are unaffected.
+5. With **Update existing .mat assets** on, confirm the shader selector is available; turn it off and confirm the selector disappears and reimport still allows texture-only refresh.
+6. Switch between tabs and verify target choices, selected pack, and status messages are independent/retained as expected. Resize the window and verify both panels scroll independently while the tab bar remains accessible.
+7. Confirm Colorizer, Animation Builder, Definition Starter and Asset Importer still compile and open; no prefab or definition behavior changed.
+
+**Build note:** Static validation only; Unity compilation and actual reimport testing are required.
+
+---
+
+# Beta 1.4 regression checklist
+
+1. Open Asset Importer, choose **Car** and enable **Copy settings from another model definition**. There should be **one** Base road number field (in the shared definition options). Leave blank; the copied value should inherit. Enter `0007`; it must preserve leading zeros and override the copied source.
+2. Use **Numbering series key** with a new reporting mark and a `7703` to `9850` range. Verify the result is under `CarStyle.definition.carSeries.<key>` and does not replace `ReportingMark.mark`.
+3. Enable **Override number / reporting mark decal finish** and use `#222222`, shininess `0.0`. After copying, inspect `CarStyle.definition.styles.Decal.color` — expected `smooth(#222222, 0.0)`. Test 1.0 and a middle slider value for invariant decimal notation. Leave override unchecked and confirm existing style copying behavior is preserved.
+4. Try malformed hex (`#GGGGGG` / missing `#`) and an unstyled destination without a reporting mark. Expect an explanatory dialog and no partial edit of `Definitions.json`.
+5. Manual bulk copy into multiple liveries: each destination should accept a distinct base number, numbering series and decal finish; existing distinct reporting marks and numbering ranges must survive when not overridden.
+6. When source Car has no CarStyle, enable a decal finish override and provide a new reporting mark. Verify a new `CarStyle` and `ReportingMark` are created with `styles.Decal.color`, with no unnecessary carSeries populated.
+7. Verify that a fresh prefab import, Animation Builder, Material Builder, Colorizer and existing prefabs behave as in v3.0 Beta 1.3.
+
+Before testing, back up the pack's `Definitions.json`. Unity compilation and in-game rendering cannot be tested here.
+
+---
+
 # Beta 1.3 focused tests
 
 1. Open Importer (both New FBX and New Livery); confirm no **Add prefab to scene** or scene-replacement toggles. Import into a test pack. Root prefab must be saved, but active scene hierarchy and dirty state must be untouched.

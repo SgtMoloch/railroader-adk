@@ -1,9 +1,11 @@
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using UnityEditor;
@@ -349,6 +351,9 @@ namespace Railroader.AssetTools
             internal string SeriesName = "";
             internal string SeriesStart = "";
             internal string SeriesEnd = "";
+            internal bool OverrideDecalAppearance;
+            internal string DecalColorHex = "#222222";
+            internal float DecalShininess = 0.0f;
 
             internal bool HasRange => !string.IsNullOrWhiteSpace(SeriesName) ||
                 !string.IsNullOrWhiteSpace(SeriesStart) || !string.IsNullOrWhiteSpace(SeriesEnd);
@@ -398,7 +403,7 @@ namespace Railroader.AssetTools
             return marks.Count == 1 ? marks[0] : null;
         }
 
-        private static string ValidateReportingMark(string value, string target)
+        internal static string ValidateReportingMark(string value, string target)
         {
             value = (value ?? "").Trim().ToUpperInvariant();
             if (value.Length < 1 || value.Length > 12 || !value.All(c =>
@@ -424,19 +429,24 @@ namespace Railroader.AssetTools
         private static string UniqueStyleId(JArray entries, string targetId, string mark)
         {
             string ns = NamespaceFor(targetId);
+            // Include the destination model's identifier so cars sharing a reporting mark
+            // don't share a CarStyle. Remove the same mark from the start of the model name
+            // before appending it, and don't append it twice if the name already ends with it.
+            // freeman/bnsfh351 + BNSF -> freeman/style.h351bnsf
+            // freeman/ipdboxcar + ATSF -> freeman/style.ipdboxcaratsf
+            string model = targetId.Substring(targetId.IndexOf('/') + 1).ToLowerInvariant();
+            model = new string(model.Where(char.IsLetterOrDigit).ToArray());
             string suffix = new string(mark.ToLowerInvariant().Where(char.IsLetterOrDigit).ToArray());
-            string original = ns + "/style." + suffix;
-            if (!IdExists(entries, original))
+            if (model.StartsWith(suffix, StringComparison.Ordinal) && model.Length > suffix.Length)
             {
-                return original;
+                model = model.Substring(suffix.Length);
             }
-            string tail = targetId.Substring(targetId.IndexOf('/') + 1).ToLowerInvariant();
-            tail = new string(tail.Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_').ToArray());
-            if (tail.Length == 0)
+            if (model.Length == 0)
             {
-                tail = "model";
+                model = "model";
             }
-            string baseId = original + "-" + tail;
+            string baseId = ns + "/style." + model +
+                (model.EndsWith(suffix, StringComparison.Ordinal) ? "" : suffix);
             string candidate = baseId;
             int n = 2;
             while (IdExists(entries, candidate))
@@ -673,6 +683,46 @@ namespace Railroader.AssetTools
             definition["carSeries"] = series;
         }
 
+        internal static void ValidateDecalFinish(RoadNumberOverrides numbers, string destinationId)
+        {
+            if (numbers == null || !numbers.OverrideDecalAppearance)
+            {
+                return;
+            }
+
+            string hex = (numbers.DecalColorHex ?? "").Trim();
+            if (!Regex.IsMatch(hex, @"^#[0-9a-fA-F]{6}$"))
+            {
+                throw new InvalidOperationException("Decal color for " + destinationId +
+                    " must be #RRGGBB (for example, #222222).");
+            }
+            if (float.IsNaN(numbers.DecalShininess) || float.IsInfinity(numbers.DecalShininess) ||
+                numbers.DecalShininess < 0.0f || numbers.DecalShininess > 1.0f)
+            {
+                throw new InvalidOperationException("Shininess for " + destinationId +
+                    " must be between 0.0 and 1.0.");
+            }
+        }
+
+        private static void ApplyDecalAppearance(JArray objects, string destinationId,
+            RoadNumberOverrides numbers, string requestedMark)
+        {
+            if (numbers == null || !numbers.OverrideDecalAppearance)
+            {
+                return;
+            }
+
+            ValidateDecalFinish(numbers, destinationId);
+            JObject style = EnsureStyleForRange(objects, destinationId, requestedMark);
+            JObject definition = (JObject)style["definition"];
+            JObject styles = definition["styles"] as JObject ?? new JObject();
+            JObject decal = styles["Decal"] as JObject ?? new JObject();
+            string finish = numbers.DecalShininess.ToString("0.0###", CultureInfo.InvariantCulture);
+            decal["color"] = "smooth(" + numbers.DecalColorHex.Trim().ToUpperInvariant() + ", " + finish + ")";
+            styles["Decal"] = decal;
+            definition["styles"] = styles;
+        }
+
         internal static string CopyToTargets(string pack, string sourceId, IEnumerable<string> targetIds,
             bool askConfirmation, RelatedCopyOptions related = null)
         {
@@ -744,12 +794,30 @@ namespace Railroader.AssetTools
                     {
                         CopyLinkedCarStyles(staged, sourceId, id, mark);
                     }
+                    else if (!string.IsNullOrWhiteSpace(mark) &&
+                        LinkedStyles(staged, id).Count == 0)
+                    {
+                        // A source without CarStyles can still produce a new livery mark.
+                        // Opt-in: the user explicitly supplied a mark and enabled style copying.
+                        EnsureStyleForRange(staged, id, mark);
+                    }
                 }
-                if (numbers != null && numbers.HasRange && sourceChoice.Kind == "Car")
+                if (numbers != null && sourceChoice.Kind == "Car" &&
+                    (numbers.HasRange || numbers.OverrideDecalAppearance))
                 {
                     string mark = null;
-                    related.TargetMarks.TryGetValue(id, out mark);
-                    ApplyRoadSeries(staged, id, numbers, mark);
+                    if (related != null)
+                    {
+                        related.TargetMarks.TryGetValue(id, out mark);
+                    }
+                    if (numbers.HasRange)
+                    {
+                        ApplyRoadSeries(staged, id, numbers, mark);
+                    }
+                    if (numbers.OverrideDecalAppearance)
+                    {
+                        ApplyDecalAppearance(staged, id, numbers, mark);
+                    }
                 }
             }
             if (JToken.DeepEquals(root, stagedRoot))
@@ -762,9 +830,9 @@ namespace Railroader.AssetTools
                 "dimensions and animations. Target IDs, names, model references and baked " +
                 "Colorizer data are retained. Optional road-number overrides apply to each destination.\n\n" +
                 (related?.IncludeCarStyles == true && string.Equals(sourceChoice.Kind, "Car", StringComparison.OrdinalIgnoreCase)
-                    ? "Related CarStyle entries will also be copied. Existing reporting marks and road-number " +
-                      "series are preserved. New styles use the chosen reporting marks, with the source's " +
-                      "road-number series as an editable starting point.\n\n"
+                    ? "Linked CarStyles will be copied if present. If the source has no style, " +
+                      "enter a target reporting mark to create a new CarStyle and ReportingMark. " +
+                      "Existing target styles and road-number series are preserved.\n\n"
                     : "") + "A backup will be created first.",
                 "Copy settings", "Cancel"))
                 return "Canceled. No definitions changed.";

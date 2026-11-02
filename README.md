@@ -1,3 +1,48 @@
+# v3.0 Beta 1.5.3 — In-place FBX / Texture Reimport (test build)
+
+- Added **Railroader → Model Reimport** with an Asset Importer shortcut.
+- Keeps the existing imported FBX asset path and `.meta` GUID; **no prefab recreation or authoring prefab edits**.
+- Optional model/livery-scoped Painter texture refresh using the existing refresh service.
+- Defaults to preserving all `.mat` settings and prefab overrides; can optionally refresh `.mat` assets.
+- Previews linked prefabs, backs up touched files outside Assets, and warns if the FBX object/mesh/material names change.
+- Still requires an in-Unity test; Unity may lose overrides when source FBX hierarchies or material slot names change.
+
+See `MODEL_REIMPORT_BETA1.5.3.md`.
+
+---
+
+# Railroader ADK Tools v3.0 Beta 1.5.2
+
+**Based directly on Beta 1.5.** Material Builder still has **Build / Map Materials** and **Reimport Textures** tabs. No decal-preview utility from later experimental builds is included.
+
+**Reporting marks when copying Car definitions:** In **Railroader → Asset Importer**, choose **Copy settings from another model definition**, enable **Copy / create CarStyle and ReportingMark**, and fill **New reporting mark**. Even if the source car has no CarStyle, a new CarStyle and a matching ReportingMark entry will be generated for the new car. A numbering range or decal finish override is no longer required. In **Railroader → Definition Starter → Copy Configuration to Other Models**, enable **Copy / create CarStyles and ReportingMarks** and fill **Mark for <target prefab>** to achieve the same result. Leave the mark blank to skip creating a new style when the source has none.
+
+**New CarStyle IDs are model-specific:** A destination car `freeman/ipdboxcar` with mark `ATSF` produces `freeman/style.ipdboxcaratsf`. A different car `freeman/secondboxcar` with the same mark produces `freeman/style.secondboxcaratsf`. The separate `freeman/ATSF` ReportingMark definition is shared and reused; existing CarStyles keep their IDs. The importer no longer uses `freeman/style.atsf` for freshly generated styles.
+
+**Upgrade:** Copy the package's `Assets/` tree over the existing Beta 1.5 toolkit files in the Unity ADK project, keeping the existing `.meta` files. No `Definitions.json` migration is performed or needed. Test with a backup of your asset pack first. Unity/game compilation has not been performed in this environment.
+
+---
+
+# Railroader ADK Tools v3.0 Beta 1.5
+
+**Material Builder now has two tabs:** **Build / Map Materials** for the existing material workflow (including its ADK Asset Pack and Manual modes), and **Reimport Textures** for updating existing model/livery texture sets without reimporting the FBX or touching the prefab. On Reimport Textures, select an asset pack and model/livery, browse the Painter export folder, preview changes, then reimport. The shader selector is available when the material-update checkbox is on. The tab bar stays visible while either tab scrolls, and each tab keeps its own scroll position.
+
+Everything else is carried forward from Beta 1.4 unchanged. See CHANGELOG.md for this release and the earlier detailed feature notes below.
+
+---
+
+# Railroader ADK Tools v3.0 Beta 1.4
+
+In the **Asset Importer**, use the single optional **Base road number** input under the definition preset settings. When copying from another definition, blank inherits the source's value; a filled value overrides it. In **Definition Starter**, bulk copying still shows one optional number per destination; the separate top-of-window number edits a newly created definition only.
+
+**Numbering series key** is the `carSeries` object key, not the reporting mark. For instance, a series key of `ACFR`, start of `7703`, end of `9850` writes `carSeries.ACFR = {"start":"7703","end":"9850"}`. Leave the key blank when updating the only existing series; specify a key and endpoints to create one. Set a reporting mark when creating a new CarStyle.
+
+**Decal finish:** During Car definition copying, optionally enable **Override number / reporting mark decal finish**. The hex input accepts exactly `#RRGGBB` and the picker mirrors it. `Shininess` ranges from `0.0` (matte) to `1.0` (high smoothness); default is `0.0`. The generated CarStyle expression is always `smooth(#222222, 0.0)` by default. Unchecked leaves source/destination style-copy behavior alone. The setting affects the `Decal` style class (potentially BOTH the road number and reporting mark), not the locomotive/car materials. If the destination has no CarStyle, supply its reporting mark so the copy can create one.
+
+This remains an **uncompiled Unity test build**. See `TESTING.md` for validation steps. All other v3.0 Beta 1.3 features remain in place.
+
+---
+
 ## v3.0 Beta 1.3 updates
 
 **Import:** Importer now creates or preserves the root prefab *asset only*. It does not add or replace scene instances. Use Unity to place an instance manually when needed.

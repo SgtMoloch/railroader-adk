@@ -1,3 +1,32 @@
+# v3.0 Beta 1.5.3 — In-place FBX / Texture Reimport (test build)
+
+- Added **Railroader → Model Reimport** with an Asset Importer shortcut.
+- Keeps the existing imported FBX asset path and `.meta` GUID; **no prefab recreation or authoring prefab edits**.
+- Optional model/livery-scoped Painter texture refresh using the existing refresh service.
+- Defaults to preserving all `.mat` settings and prefab overrides; can optionally refresh `.mat` assets.
+- Previews linked prefabs, backs up touched files outside Assets, and warns if the FBX object/mesh/material names change.
+- Still requires an in-Unity test; Unity may lose overrides when source FBX hierarchies or material slot names change.
+
+See `MODEL_REIMPORT_BETA1.5.3.md`.
+
+---
+
+# Beta 1.5.2 — Upgrade from Beta 1.5.1
+
+Install the complete ZIP's `Assets` tree over the previous version of the toolkit. No Beta 1.6 decal preview scripts are included. Existing `.meta` GUIDs stay the same. As always, back up the Unity project first.
+
+- Newly created CarStyle IDs avoid doubling up a reporting mark already embedded at the beginning (or end) of the destination model identifier.
+- Creating a new livery from a shared FBX now leaves the new prefab name **blank**, so you can specify a unique name without the `_Livery` suffix. No existing livery names, generated JSON, or prefab references are automatically changed.
+- These are **future-generation changes**. If a style already exists as `freeman/style.bnsfh351bnsf`, the tool will preserve it. To rename that existing ID, edit the affected definitions manually and check all references.
+
+---
+
+# Beta 1.5.1 — Upgrade from Beta 1.5
+
+This is a small Definition Copier / Importer / Starter update, not a replacement for the whole ADK project. Copy the included `Assets` tree into your existing Unity ADK project and let Unity reimport scripts. This ZIP preserves the Beta 1.5 Material Builder tabs and existing `.meta` files. No change is made to existing `Definitions.json` files just by installing; new model-prefixed CarStyle IDs are only generated during future copy/import operations. Existing CarStyle identifiers are intentionally kept.
+
+---
+
 # Beta 1.2 — Unity / VS Code upgrade and diagnostics
 
 **Back up the Unity project before removing anything.**
