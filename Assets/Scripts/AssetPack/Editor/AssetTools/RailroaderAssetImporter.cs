@@ -27,6 +27,11 @@ namespace Railroader.AssetTools
         private string prefabName = "";
         private RailroaderImportMode importMode;
         private int existingModelIndex;
+        private bool copyLiveryColliders = true;
+        private string liveryColliderSource;
+        private string cachedColliderPack;
+        private string cachedColliderModel;
+        private List<string> cachedColliderSources;
         private RailroaderImportMode lastDisplayedMode;
         private string selectedPackForDefaults;
         private bool previousDefinitionsExists;
@@ -49,6 +54,15 @@ namespace Railroader.AssetTools
         private RailroaderShaderSelection shaderSelection = RailroaderShaderSelection.Automatic;
         private Shader customShader;
         private string status;
+        // Definition sources and linked-style status are read from disk, not computed on
+        // every Layout/Repaint. The timestamp also catches external JSON edits.
+        private List<RailroaderDefinitionCopier.Choice> cachedSources;
+        private string cachedSourcePack;
+        private string cachedSourceKind;
+        private DateTime cachedDefinitionsWriteTime;
+        private long cachedDefinitionsLength;
+        private readonly Dictionary<string, bool> cachedLinkedStyles =
+            new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         private readonly RailroaderDefinitionOptions definitionOptions = new RailroaderDefinitionOptions();
 
         [MenuItem("Railroader/Asset Importer")]
@@ -60,6 +74,81 @@ namespace Railroader.AssetTools
         private void OnEnable()
         {
             pack = EditorPrefs.GetString("RailroaderTools.SelectedPack", "");
+            EditorApplication.projectChanged += InvalidateDefinitionCache;
+        }
+
+        private void OnDisable()
+        {
+            EditorApplication.projectChanged -= InvalidateDefinitionCache;
+        }
+
+        private void InvalidateDefinitionCache()
+        {
+            cachedSources = null;
+            cachedLinkedStyles.Clear();
+            cachedColliderSources = null;
+        }
+
+        private List<RailroaderDefinitionCopier.Choice> CopySources(string selectedPack, string kind)
+        {
+            string path = RailroaderAssetPackTools.Absolute(selectedPack + "/Definitions.json");
+            var file = new FileInfo(path);
+            DateTime modified = file.Exists ? file.LastWriteTimeUtc : DateTime.MinValue;
+            long length = file.Exists ? file.Length : -1;
+            if (cachedSources == null ||
+                !string.Equals(cachedSourcePack, selectedPack, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(cachedSourceKind, kind, StringComparison.OrdinalIgnoreCase) ||
+                cachedDefinitionsWriteTime != modified || cachedDefinitionsLength != length)
+            {
+                cachedSources = RailroaderDefinitionCopier.Sources(selectedPack, kind);
+                cachedSourcePack = selectedPack;
+                cachedSourceKind = kind;
+                cachedDefinitionsWriteTime = modified;
+                cachedDefinitionsLength = length;
+                cachedLinkedStyles.Clear();
+            }
+            return cachedSources;
+        }
+
+        private bool SourceHasStyles(string selectedPack, string sourceId)
+        {
+            if (!cachedLinkedStyles.TryGetValue(sourceId, out bool hasStyles))
+            {
+                hasStyles = RailroaderDefinitionCopier.HasLinkedStyles(selectedPack, sourceId);
+                cachedLinkedStyles[sourceId] = hasStyles;
+            }
+            return hasStyles;
+        }
+
+        // Resolve source prefabs only when the pack/model or Unity project changes.
+        // The first choice prefers the original model prefab rather than another livery.
+        private List<string> LiveryColliderSources(string selectedPack, string modelPath)
+        {
+            if (cachedColliderSources == null ||
+                !string.Equals(cachedColliderPack, selectedPack, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(cachedColliderModel, modelPath, StringComparison.OrdinalIgnoreCase))
+            {
+                string modelName = Path.GetFileNameWithoutExtension(modelPath);
+                cachedColliderSources = RailroaderAssetPackTools.RootPrefabs(selectedPack)
+                    .Where(path =>
+                    {
+                        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                        return prefab != null && RailroaderAssetPackTools.PrefabReferencesModel(prefab, modelPath);
+                    })
+                    .OrderBy(path => File.Exists(RailroaderAssetPackTools.Absolute(
+                        RailroaderLiveryManifest.PathFor(selectedPack,
+                            Path.GetFileNameWithoutExtension(path)))) ? 1 : 0)
+                    .ThenBy(path => string.Equals(Path.GetFileNameWithoutExtension(path),
+                        modelName, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                    .ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                cachedColliderPack = selectedPack;
+                cachedColliderModel = modelPath;
+                // Retain an explicit selection as long as it belongs to this model.
+                if (!cachedColliderSources.Contains(liveryColliderSource))
+                    liveryColliderSource = cachedColliderSources.FirstOrDefault();
+            }
+            return cachedColliderSources;
         }
 
         private Vector2 windowScroll;
@@ -75,7 +164,7 @@ namespace Railroader.AssetTools
 
         private void DrawContents()
         {
-            EditorGUILayout.LabelField("Railroader Asset Importer v3.0 Beta 1.5.3", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Railroader Asset Importer v3.0 Beta 1.5.8", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("Import a new FBX/OBJ, or create an additional livery from an FBX " +
                 "already in this pack. Asset packs must first be created in the ADK.", MessageType.Info);
             if (GUILayout.Button("Reimport an Existing FBX / Textures..."))
@@ -101,7 +190,9 @@ namespace Railroader.AssetTools
             importMode = (RailroaderImportMode)GUILayout.Toolbar((int)importMode,
                 new[] { "Import New FBX", "New Livery (Reuse FBX)" });
             EditorGUILayout.Space();
-            var models = validPack ? RailroaderAssetPackTools.Models(pack) : new List<string>();
+            // The Import New FBX tab has no need to discover all imported models.
+            var models = validPack && importMode == RailroaderImportMode.NewLiveryFromExistingModel
+                ? RailroaderAssetPackTools.Models(pack) : new List<string>();
             if (importMode != lastDisplayedMode)
             {
                 lastDisplayedMode = importMode;
@@ -119,6 +210,7 @@ namespace Railroader.AssetTools
                 definitionName = RailroaderStarterDefinitions.DisplayName(prefabName);
             }
             string selectedModel = null;
+            string selectedColliderSource = null;
             if (importMode == RailroaderImportMode.NewModel)
             {
                 using (new EditorGUILayout.HorizontalScope())
@@ -151,6 +243,32 @@ namespace Railroader.AssetTools
                     EditorGUILayout.HelpBox("The new livery gets its own root prefab and textures. " +
                         "The shared FBX importer's material mappings remain untouched. " +
                         "Materials are assigned only on the new livery prefab.", MessageType.Info);
+                    EditorGUILayout.Space();
+                    EditorGUILayout.LabelField("Collider / Clickable inheritance", EditorStyles.boldLabel);
+                    copyLiveryColliders = EditorGUILayout.ToggleLeft(
+                        "Copy colliders and Clickable layers from an existing prefab", copyLiveryColliders);
+                    if (copyLiveryColliders)
+                    {
+                        List<string> candidates = LiveryColliderSources(pack, selectedModel);
+                        if (candidates.Count == 0)
+                        {
+                            EditorGUILayout.HelpBox("No existing root prefab using this FBX was found. " +
+                                "Import its base model first, or disable collider copying.", MessageType.Warning);
+                        }
+                        else
+                        {
+                            int sourceIndex = candidates.IndexOf(liveryColliderSource);
+                            sourceIndex = Mathf.Clamp(sourceIndex, 0, candidates.Count - 1);
+                            sourceIndex = EditorGUILayout.Popup("Copy from prefab", sourceIndex,
+                                candidates.Select(p => Path.GetFileNameWithoutExtension(p)).ToArray());
+                            liveryColliderSource = candidates[sourceIndex];
+                            selectedColliderSource = liveryColliderSource;
+                            EditorGUILayout.HelpBox("Copies collider components, collider-only child objects, " +
+                                "and GameObject layers (including Clickable) from this prefab on FIRST import. " +
+                                "Does not copy materials, Colorizer mappings or other gameplay components. " +
+                                "Existing liveries retain their own collider edits.", MessageType.None);
+                        }
+                    }
                 }
             }
             using (new EditorGUILayout.HorizontalScope())
@@ -198,7 +316,7 @@ namespace Railroader.AssetTools
                 List<RailroaderDefinitionCopier.Choice> sources;
                 try
                 {
-                    sources = RailroaderDefinitionCopier.Sources(pack, definitionKind.ToString());
+                    sources = CopySources(pack, definitionKind.ToString());
                 }
                 catch (Exception ex)
                 {
@@ -220,8 +338,7 @@ namespace Railroader.AssetTools
                         "Will not overwrite an existing definition. Disabled by default.", MessageType.Warning);
                     if (definitionKind == RailroaderStarterDefinitionKind.Car)
                     {
-                        bool sourceHasStyles = RailroaderDefinitionCopier.HasLinkedStyles(pack,
-                            sources[copySourceIndex].Id);
+                        bool sourceHasStyles = SourceHasStyles(pack, sources[copySourceIndex].Id);
                         copyLinkedCarStyles = EditorGUILayout.ToggleLeft(
                             "Copy / create CarStyle and ReportingMark", copyLinkedCarStyles);
                         newReportingMark = EditorGUILayout.TextField("New reporting mark", newReportingMark);
@@ -259,7 +376,8 @@ namespace Railroader.AssetTools
             }
             if (appendDefinitionEntry)
                 RailroaderDefinitionOptionsUI.Draw(definitionKind, definitionOptions, prefabName,
-                    validPack ? pack + "/" + prefabName + ".prefab" : null);
+                    validPack ? pack + "/" + prefabName + ".prefab" : null,
+                    importMode != RailroaderImportMode.NewLiveryFromExistingModel);
             EditorGUILayout.HelpBox("Texture picker defaults to " + TextureBrowseDirectory() +
                 ". Select one model/livery export folder rather than the entire Substance export library.",
                 MessageType.None);
@@ -297,7 +415,7 @@ namespace Railroader.AssetTools
             {
                 if (GUILayout.Button("Import Assets", GUILayout.Height(34)))
                 {
-                    Import(selectedModel);
+                    Import(selectedModel, selectedColliderSource);
                 }
             }
             if (!string.IsNullOrEmpty(status))
@@ -306,14 +424,14 @@ namespace Railroader.AssetTools
             }
         }
 
-        private static string DesktopDirectory()
+        internal static string DesktopDirectory()
         {
             string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
             return Directory.Exists(desktop) ? desktop :
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         }
 
-        private static string TextureBrowseDirectory()
+        internal static string TextureBrowseDirectory()
         {
             // Resolve the logged-in Windows user; never hardcode "C:\Users\User".
             string[] candidateDocuments = {
@@ -417,7 +535,7 @@ namespace Railroader.AssetTools
             return result;
         }
 
-        private void Import(string selectedSharedModel)
+        private void Import(string selectedSharedModel, string selectedColliderSource)
         {
             try
             {
@@ -476,6 +594,11 @@ namespace Railroader.AssetTools
                         throw new InvalidOperationException("A root prefab already uses this livery name. " +
                             "Choose a new name, so existing models are not modified: " + prefabPath);
                     RailroaderLiveryManifest.ValidateExisting(manifestPath, modelAssetPath, prefabPath);
+                    if (!existingManifest && copyLiveryColliders &&
+                        (string.IsNullOrEmpty(selectedColliderSource) ||
+                         string.Equals(selectedColliderSource, prefabPath, StringComparison.OrdinalIgnoreCase)))
+                        throw new InvalidOperationException("Select an existing source prefab for the livery's colliders, " +
+                            "or turn off collider copying.");
                     if (!existingManifest && string.IsNullOrEmpty(srcTextures))
                     {
                         throw new InvalidOperationException("Choose a Substance Painter texture folder for the new livery");
@@ -575,15 +698,43 @@ namespace Railroader.AssetTools
                     written++;
                 }
                 AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+                // Model/texture imports can change the available model list immediately.
+                RailroaderAssetPackTools.InvalidateAssetLists();
                 if (AssetDatabase.LoadAssetAtPath<GameObject>(modelAssetPath) == null)
                 {
                     throw new InvalidOperationException("Unity could not recognize the model " + modelAssetPath);
                 }
                 string actualPrefabPath = RailroaderAssetPackTools.EnsureNamedPrefab(pack,
                     modelAssetPath, cleanName, out string prefabAction);
+                string colliderAction = "Not requested";
+                // Never mutate an existing livery's custom collision setup on a texture reimport.
+                bool liveryAlreadyExists = livery && File.Exists(RailroaderAssetPackTools.Absolute(
+                    RailroaderLiveryManifest.PathFor(pack, cleanName)));
                 if (livery)
+                {
+                    if (liveryAlreadyExists)
+                        colliderAction = "Existing livery colliders and layers preserved";
+                    else if (copyLiveryColliders)
+                    {
+                        try
+                        {
+                            colliderAction = RailroaderLiveryCollisionCopier.Copy(
+                                selectedColliderSource, actualPrefabPath, modelAssetPath);
+                        }
+                        catch
+                        {
+                            // A brand-new prefab was just made by EnsureNamedPrefab.
+                            // Don't strand a partially copied, unregistered livery.
+                            if (!liveryAlreadyExists)
+                                AssetDatabase.DeleteAsset(actualPrefabPath);
+                            throw;
+                        }
+                    }
+                    else
+                        colliderAction = "Collider copying disabled";
                     RailroaderLiveryManifest.Save(RailroaderLiveryManifest.PathFor(pack, cleanName),
                         modelAssetPath, prefabPath);
+                }
 
                 string materialAction = "Not requested";
                 if (buildMaterials)
@@ -595,7 +746,8 @@ namespace Railroader.AssetTools
                         : RailroaderMaterialService.BuildSingleModel(modelAssetPath,
                             textureRoot, shaderSelection, customShader);
                 }
-                bool clickable = definitionOptions.ClickableCollider &&
+                // Livery colliders come from the selected prefab, never from a generic box.
+                bool clickable = !livery && definitionOptions.ClickableCollider &&
                     (definitionKind == RailroaderStarterDefinitionKind.Car ||
                      definitionKind == RailroaderStarterDefinitionKind.DieselLocomotive);
                 bool truckMap = definitionKind == RailroaderStarterDefinitionKind.Truck && definitionOptions.TruckColor;
@@ -613,7 +765,7 @@ namespace Railroader.AssetTools
                     ? RailroaderStarterDefinitions.CreateIfMissing(pack, cleanName, definitionKind,
                         string.IsNullOrWhiteSpace(definitionName)
                             ? RailroaderStarterDefinitions.DisplayName(cleanName) : definitionName.Trim(),
-                        definitionOptions)
+                        definitionOptions, !livery)
                     : "Not requested";
                 string copiedSettingsAction = "Not requested";
                 if (appendDefinitionEntry && copyExistingDefinition &&
@@ -654,12 +806,14 @@ namespace Railroader.AssetTools
                 status = $"Copied {written} files ({unchanged} already in place).\n" +
                          $"Prefab: {prefabAction}\n" +
                          $"Materials: {materialAction}\n" +
+                         $"Collider / layer copy: {colliderAction}\n" +
                          $"Prefab setup: {prefabSetupAction}\n" +
                          $"Animations: {animationAction}\n" +
                          $"Definitions file: {containerAction}\n" +
                          $"Definition entry: {definitionAction}\n" +
                          $"Copied definition settings: {copiedSettingsAction}";
                 Debug.Log("[Railroader Importer] " + status.Replace("\n", " | "));
+                InvalidateDefinitionCache();
                 // On the next draw, file presence updates the 'Create file' default.
             }
             catch (Exception ex)

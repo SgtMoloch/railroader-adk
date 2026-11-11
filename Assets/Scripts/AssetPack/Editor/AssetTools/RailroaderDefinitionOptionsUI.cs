@@ -44,7 +44,7 @@ namespace Railroader.AssetTools
         }
 
         internal static void Draw(RailroaderStarterDefinitionKind kind, RailroaderDefinitionOptions o,
-            string prefabName, string prefabPath = null)
+            string prefabName, string prefabPath = null, bool offerColliderSetup = true)
         {
             if (kind == RailroaderStarterDefinitionKind.Truck)
             {
@@ -79,11 +79,14 @@ namespace Railroader.AssetTools
             {
                 EditorGUILayout.Space();
                 o.BaseRoadNumber = EditorGUILayout.TextField("Base road number (optional)", o.BaseRoadNumber);
-                o.ClickableCollider = EditorGUILayout.ToggleLeft(
-                    "Add model-sized BoxCollider + Clickable layer", o.ClickableCollider);
-                if (!RailroaderPrefabSetup.HasClickableLayer)
+                if (offerColliderSetup)
                 {
-                    EditorGUILayout.HelpBox("Clickable layer not found. Collider setup will be skipped.", MessageType.Warning);
+                    o.ClickableCollider = EditorGUILayout.ToggleLeft(
+                        "Add model-sized BoxCollider + Clickable layer", o.ClickableCollider);
+                    if (!RailroaderPrefabSetup.HasClickableLayer)
+                    {
+                        EditorGUILayout.HelpBox("Clickable layer not found. Collider setup will be skipped.", MessageType.Warning);
+                    }
                 }
             }
             if (kind == RailroaderStarterDefinitionKind.SteamLocomotive)

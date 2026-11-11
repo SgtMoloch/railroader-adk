@@ -280,7 +280,8 @@ namespace Railroader.AssetTools
 
         internal static string CreateIfMissing(string pack, string prefabName,
             RailroaderStarterDefinitionKind kind, string displayName,
-            RailroaderDefinitionOptions options = null)
+            RailroaderDefinitionOptions options = null,
+            bool configureClickableCollider = true)
         {
             if (!RailroaderAssetPackTools.ValidPack(pack) ||
                 !RailroaderAssetPackTools.ValidAssetName(prefabName))
@@ -312,7 +313,7 @@ namespace Railroader.AssetTools
             // Confirmed: configure the prefab before adding any JSON entry, so a missing
             // material never produces an invalid RendererGroup reference.
             options = options ?? new RailroaderDefinitionOptions();
-            bool addCollider = options.ClickableCollider &&
+            bool addCollider = configureClickableCollider && options.ClickableCollider &&
                 (kind == RailroaderStarterDefinitionKind.Car ||
                  kind == RailroaderStarterDefinitionKind.DieselLocomotive);
             bool mapTruck = kind == RailroaderStarterDefinitionKind.Truck && options.TruckColor;

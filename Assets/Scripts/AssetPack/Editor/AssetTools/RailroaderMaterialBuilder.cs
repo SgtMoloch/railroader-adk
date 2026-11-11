@@ -916,36 +916,52 @@ namespace Railroader.AssetTools
     /// <summary>Shared dropdown for both windows; only packs already created in ADK are eligible.</summary>
     internal static class RailroaderAssetPackPicker
     {
-        internal static string Draw(string label, string selected)
+        private static List<string> cachedPaths;
+        private static string[] cachedOptions;
+
+        internal static void InvalidateCache()
         {
-            // Sort by identifier, not the arbitrary local folder path, so all packs
-            // belonging to one domain stay together in the dropdown.
+            cachedPaths = null;
+            cachedOptions = null;
+        }
+
+        private static void EnsureChoices()
+        {
+            if (cachedOptions != null)
+            {
+                return;
+            }
+            // Reading each Info.json and rebuilding labels every repaint is expensive.
+            // Invalidate on Unity project changes or an explicit Refresh click.
             var entries = RailroaderAssetPackTools.Packs()
                 .Select(p => new { Path = p, Identifier = RailroaderAssetPackTools.PackIdentifier(p) })
                 .OrderBy(e => e.Identifier, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(e => e.Path, StringComparer.OrdinalIgnoreCase)
                 .ToList();
-            List<string> packs = entries.Select(e => e.Path).ToList();
-            // EditorGUILayout.Popup interprets '/' as a submenu separator, e.g.
-            // sgtmoloch/test appears under sgtmoloch > test. Use Info.json identity,
-            // not the asset pack's directory name (which ADK does not require to match).
+            cachedPaths = entries.Select(e => e.Path).ToList();
             var counts = entries.GroupBy(e => e.Identifier, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
             string[] identifiers = entries.Select(e => counts[e.Identifier] > 1
                 ? e.Identifier + " (" + System.IO.Path.GetFileName(e.Path) + ")" : e.Identifier).ToArray();
-            string[] options = (new[] { "<Select existing pack>" }).Concat(identifiers).ToArray();
-            int current = Math.Max(0, packs.FindIndex(p => string.Equals(p, selected, StringComparison.OrdinalIgnoreCase)) + 1);
+            cachedOptions = (new[] { "<Select existing pack>" }).Concat(identifiers).ToArray();
+        }
+
+        internal static string Draw(string label, string selected)
+        {
+            EnsureChoices();
+            int current = Math.Max(0, cachedPaths.FindIndex(p => string.Equals(p, selected, StringComparison.OrdinalIgnoreCase)) + 1);
             using (new EditorGUILayout.HorizontalScope())
             {
-                int next = EditorGUILayout.Popup(label, current, options);
+                int next = EditorGUILayout.Popup(label, current, cachedOptions);
                 if (next != current)
                 {
-                    selected = next == 0 ? "" : packs[next - 1];
+                    selected = next == 0 ? "" : cachedPaths[next - 1];
                     EditorPrefs.SetString("RailroaderTools.SelectedPack", selected);
                 }
                 if (GUILayout.Button("Refresh", GUILayout.Width(72)))
                 {
                     AssetDatabase.Refresh();
+                    RailroaderAssetPackTools.InvalidateAssetLists();
                 }
             }
             DefaultAsset folder = string.IsNullOrEmpty(selected) ? null : AssetDatabase.LoadAssetAtPath<DefaultAsset>(selected);

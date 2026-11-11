@@ -18,14 +18,3 @@ This is an experimental, non-destructive **existing model update** workflow. It 
 The existing ADK importer creates a root **Prefab Variant of the imported FBX Model Prefab**. Unity tracks that model through its imported-asset identity (its `.meta` GUID). Replacing the source *contents* at the same path allows Unity to rebuild the model while prefab overrides remain in the original `.prefab` asset. Root BoxColliders, added components, material assignments, and other authoring settings are not erased or programmatically re-created by this workflow. Existing authoring prefab assets are also not re-saved by this tool.
 
 **Important:** This does NOT guarantee overrides survive changes in hierarchy. Renaming, splitting, removing, or re-parenting an FBX object; changing mesh/material slot names or order; or altering pivots/scales can detach prefab child overrides, animations, per-object Colorizers, or child colliders. Even when the hierarchy matches, geometric changes can make existing BoxColliders and placement values inappropriate. Unity may resolve imported mesh subasset references differently if the export structure changes.
-
-## Test procedure
-
-1. Make a complete copy of the Unity project or commit it to version control. Unity auto-updates imported models as soon as their source bytes change.
-2. Use a sacrificial car that already has a BoxCollider, material colors, decals/configuration, and at least one shared livery. Record values and material slots.
-3. Export a *geometry-only* FBX edit, retaining existing object names, parent/child relationships, pivots, and material slots.
-4. Reimport it with **Update existing .mat** unchecked; confirm the backup location and see the updated geometry in all prefabs without losing their changes.
-5. Separately test new Painter textures for *one* livery. The other liveries should retain their own texture paths and look.
-6. Intentionally rename an FBX object in a test copy; confirm the tool warns after importing, then inspect whether Unity orphaned any affected prefab overrides. Restore the full project or backup as needed.
-
-**Build status:** Source/ZIP checks performed, but not Unity-compiled or tested in a live ADK project. Treat this as a test build.

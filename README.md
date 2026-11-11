@@ -1,11 +1,38 @@
-# v3.0 Beta 1.5.3 — In-place FBX / Texture Reimport (test build)
+## Beta 1.5.8: Copy colliders when importing a livery
+
+**New Livery (Reuse FBX)** now defaults to copying the chosen original model prefab's collider components and Clickable layers instead of generating a single root BoxCollider. Select the source prefab in the importer; the new livery stays linked to the shared FBX and retains separate materials. Existing liveries aren't overwritten on reimport. See `LIVERY_COLLIDERS_BETA1.5.8.md`.
+
+---
+
+## Beta 1.5.7: Preserve Colliders During Colorizer Bake
+
+Colorizer Bake now updates the existing game-ready prefab's colorizer materials and `MaterialMap` instead of replacing the whole hierarchy from `Authoring/`. This preserves existing colliders and other components added directly to the game prefab. An explicit before/after collider check aborts and rolls back unexpected changes. See `COLORIZER_BAKE_BETA1.5.7.md` for details and first-test steps.
+
+---
+
+## Beta 1.5.6: ModDev Pull Reminder
+
+New: **Railroader > Pull Reminder**. Checks all loaded asset packs for in-game edits in ModDev and shows a pack-by-pack Pull / Ignore reminder so you don't lose edited definitions when building. Includes a manual check and custom ModDev path setting. See `PULL_REMINDER_BETA1.5.6.md`.
+
+# Railroader ADK Tools v3.0 Beta 1.5.5 — Model Reimport browse defaults
+
+The **Model Reimport** window now starts its updated-FBX file picker on the Desktop and its Substance Painter texture-folder picker at `Documents/Adobe/Adobe Substance 3D Painter/export` (or Desktop if the Painter export directory does not exist), just like Asset Importer. Previously selected valid source paths take precedence. Based on **Beta 1.5.4** with all performance improvements and prior features retained.
+
+---
+
+# Railroader ADK Tools v3.0 Beta 1.5.4 — Importer UI Performance
+
+Based directly on **Beta 1.5.3**, retaining Model Reimport, Material Builder tabs, and all previous CarStyle / livery naming changes. Asset Pack and model dropdowns no longer rescan the project on every `OnGUI` call, and the importer caches definition-copy choices / CarStyle status until the underlying files or project change. Use **Refresh** beside the asset-pack dropdown if Unity has not yet noticed an external change.
+
+---
+
+# v3.0 Beta 1.5.3 — In-place FBX / Texture Reimport
 
 - Added **Railroader → Model Reimport** with an Asset Importer shortcut.
 - Keeps the existing imported FBX asset path and `.meta` GUID; **no prefab recreation or authoring prefab edits**.
 - Optional model/livery-scoped Painter texture refresh using the existing refresh service.
 - Defaults to preserving all `.mat` settings and prefab overrides; can optionally refresh `.mat` assets.
 - Previews linked prefabs, backs up touched files outside Assets, and warns if the FBX object/mesh/material names change.
-- Still requires an in-Unity test; Unity may lose overrides when source FBX hierarchies or material slot names change.
 
 See `MODEL_REIMPORT_BETA1.5.3.md`.
 
@@ -18,8 +45,6 @@ See `MODEL_REIMPORT_BETA1.5.3.md`.
 **Reporting marks when copying Car definitions:** In **Railroader → Asset Importer**, choose **Copy settings from another model definition**, enable **Copy / create CarStyle and ReportingMark**, and fill **New reporting mark**. Even if the source car has no CarStyle, a new CarStyle and a matching ReportingMark entry will be generated for the new car. A numbering range or decal finish override is no longer required. In **Railroader → Definition Starter → Copy Configuration to Other Models**, enable **Copy / create CarStyles and ReportingMarks** and fill **Mark for <target prefab>** to achieve the same result. Leave the mark blank to skip creating a new style when the source has none.
 
 **New CarStyle IDs are model-specific:** A destination car `freeman/ipdboxcar` with mark `ATSF` produces `freeman/style.ipdboxcaratsf`. A different car `freeman/secondboxcar` with the same mark produces `freeman/style.secondboxcaratsf`. The separate `freeman/ATSF` ReportingMark definition is shared and reused; existing CarStyles keep their IDs. The importer no longer uses `freeman/style.atsf` for freshly generated styles.
-
-**Upgrade:** Copy the package's `Assets/` tree over the existing Beta 1.5 toolkit files in the Unity ADK project, keeping the existing `.meta` files. No `Definitions.json` migration is performed or needed. Test with a backup of your asset pack first. Unity/game compilation has not been performed in this environment.
 
 ---
 
@@ -39,8 +64,6 @@ In the **Asset Importer**, use the single optional **Base road number** input un
 
 **Decal finish:** During Car definition copying, optionally enable **Override number / reporting mark decal finish**. The hex input accepts exactly `#RRGGBB` and the picker mirrors it. `Shininess` ranges from `0.0` (matte) to `1.0` (high smoothness); default is `0.0`. The generated CarStyle expression is always `smooth(#222222, 0.0)` by default. Unchecked leaves source/destination style-copy behavior alone. The setting affects the `Decal` style class (potentially BOTH the road number and reporting mark), not the locomotive/car materials. If the destination has no CarStyle, supply its reporting mark so the copy can create one.
 
-This remains an **uncompiled Unity test build**. See `TESTING.md` for validation steps. All other v3.0 Beta 1.3 features remain in place.
-
 ---
 
 ## v3.0 Beta 1.3 updates
@@ -55,7 +78,6 @@ This remains an **uncompiled Unity test build**. See `TESTING.md` for validation
 
 ---
 
-> **v3.0 Beta 1.2:** compile repair for Definition Review and MaterialMap imports. Read [INSTALL_UPGRADE.md](INSTALL_UPGRADE.md) if VS Code reports unresolved toolkit types after upgrading.
 
 # Railroader ADK Tools v3.0 Beta 1.2
 
@@ -69,10 +91,6 @@ Bug-fix and namespace follow-up to Beta 1, retaining the v2.9.2 behavior baselin
 - Moved the previously global Editor utilities into `namespace Railroader.AssetTools`. The authoring `CustomColorizer` component remains in `Railroader.AssetTools.Colorizer`, with the same fields, class name and `.meta` GUID.
 - Added an explicit import in the Colorizer blacklist so it resolves the shared `RailroaderAssetPackTools` helper in the parent namespace.
 - Expanded an Animation Builder `using (EditorGUI.DisabledScope)` block for clearer control flow.
-
-**VS Code / Unity:** Copy `Assets/` into your existing **Railroader ADK Unity project**, then open that **Unity project root** in VS Code (not just this extracted source package). Let Unity regenerate the C# solution/project files if necessary. The `.asmdef` `rootNamespace` field does **not** itself declare a C# namespace; Beta 1.1 now declares those namespaces explicitly. A plain folder containing only these scripts won't resolve Unity, Editor, or ADK assembly references by itself.
-
-This package is **not independently compiled**; the official Railroader ADK project / Unity Editor is required for compilation. Check `TESTING.md` and back up your project before installing.
 
 ---
 
@@ -109,8 +127,6 @@ This release adds a targeted Painter texture refresh without reimporting the FBX
 
 A preview is recommended, particularly when selecting broad Painter export directories. Only recognized maps are imported; unrelated exports and `.meta` files are ignored. Existing Unity materials, animation mappings, Colorizers, prefab hierarchies, definitions, and imported FBX assets are preserved.
 
-**Unity/test caveat:** This is an uncompiled Editor integration test build. Use a backed-up pack and confirm that the selected model's material names correspond to Painter's texture-set names.
-
 ---
 
 # Railroader ADK Tools v2.9.1 — Linked style copying
@@ -121,7 +137,7 @@ v2.9.1 extends **Copy Configuration to Other Models** (Definition Starter) and t
 
 - The model-specific `Car` configuration still copies as before, preserving destination `identifier`, `modelIdentifier`, display name, description, and Colorizer-managed components/styles.
 - With **Also copy linked CarStyles / ReportingMarks** selected, the tool looks for `CarStyle` entries whose `carIdentifiers` contains the source Car ID.
-- If a target Car **has an existing CarStyle** (such as `example/atsfipd` in the supplied test file), its **existing reporting mark, style ID, name, and `carSeries` are retained**. General style rules are copied from the source; existing `Renderer.*` rules remain destination-specific.
+- If a target Car **has an existing CarStyle**, its **existing reporting mark, style ID, name, and `carSeries` are retained**. General style rules are copied from the source; existing `Renderer.*` rules remain destination-specific.
 - If the target has **no CarStyle** (such as `example/bmipd`), enter the intended reporting mark (e.g., `BM`) in the Definition Starter UI. The tool creates a unique `CarStyle` with its `carIdentifiers` pointing to that target, and creates or reuses a corresponding `ReportingMark` definition. The source's `styles`, `carSeries`, and other styling data provide an editable starting point.
 - Existing `ReportingMark` definitions are never overwritten. It reuses an entry when the mark already exists in the same namespace.
 - Multiple styles from the source can be cloned. If the destination already has *more* styles than the source or uses a CarStyle shared by multiple cars, the tool refuses the copy instead of ambiguously overwriting data.
@@ -150,13 +166,9 @@ Importing a new prefab/definition copies linked entries only if the target defin
 - `example/atsfipd` already has a separate `example/style.atsf` and `example/ATSF`. Copying from CPLT to ATSF preserves ATSF's reporting mark and car-number series.
 - `example/bmipd` has no CarStyle or ReportingMark. Enter `BM` as its reporting mark. The copier creates a separate `example/style.bm` (or collision-safe suffix), links it to `example/bmipd`, and creates `example/BM` unless one already exists.
 
-This is an **uncompiled Unity test build**. Test on a backed-up pack and examine the generated JSON before building in Railroader.
-
 ---
 
 # Railroader ADK Tools v2.8.5 — Colorizer Material Blacklist
-
-**Unity integration test build.** Built from v2.8.4. This release modifies only Colorizer bulk authoring and adds a per-pack blacklist file; the baker/definition writer, Importer, Material Builder, and prefab workflow are unchanged.
 
 ## v2.8.5: Material Blacklist
 
@@ -171,15 +183,6 @@ In **Railroader → Colorizer Baker → Colorizer Markers → Material Blacklist
 5. **Remove Blacklisted Markers** is for *after-the-fact cleanup*. It asks for confirmation and removes only the `CustomColorizer` components on matching material slots in the **authoring prefab**. If a Mesh Renderer has both `Body` and `Glass`, the `Body` marker stays. Meshes, materials, the FBX, animations, and other components are untouched.
 
 **Important:** Removal does not reverse an existing bake immediately. After cleanup, rebake the Colorizer and rebuild the asset pack to refresh the in-game definition/prefab. If a material name has been changed in the *authoring* prefab, match the name currently assigned in that renderer slot. Manual marker creation in Unity is not blocked by the blacklist.
-
-### Test checklist (blacklist)
-
-- On a fresh pack, ensure the default blacklist appears. Add `HeadlightGlass`, save, close and reopen the Colorizer window, and verify the same entries load.
-- Run Auto-Assign on a sample with `Body`, `WindowGlass`, `Mirror` and verify only `Body` is marked.
-- Manually attach a marker to `WindowGlass`, then run **Remove Blacklisted Markers**. Verify only that marker disappears.
-- On a single Mesh Renderer with `Element 0 = Body` and `Element 1 = Glass`, confirm only slot 1's marker is removed.
-- Reset all groups; ensure blacklisted slots are skipped and existing blacklisted markers are untouched until explicit removal.
-- Verify that an empty blacklist excludes nothing and that no custom markers on non-blacklisted slots are removed.
 
 ## What's new
 
@@ -240,15 +243,9 @@ After copying GP38 → GP38_CSX, the second entry gains `weight: 200000` but ret
 - Colorizer v2.7.4 behavior
 - Scrollable editor windows
 
-## Installing
-
-Extract this ZIP over the existing v2.8.3 scripts, preserving existing `.meta` files. The **new** `RailroaderDefinitionCopier.cs` and `.meta` must be placed alongside `RailroaderStarterDefinitions.cs` under `Assets/Scripts/AssetPack/Editor/AssetTools/`.
-
-Do not install duplicate copies of the scripts. Back up your Unity project / asset pack before doing test imports.
 
 ## Limitations
 
-- This package was checked structurally but **not compiled or run in the Railroader ADK Unity Editor**.
 - Copies configuration JSON; it does not make different models geometrically or mechanically equivalent.
 - It does **not** automatically rewrite arbitrary references to the source car or to referenced child assets in copied fields. Carefully review the copied definition, especially wheel transforms, model-specific animation names, and dependencies.
 - It uses the object-container definition format required by the Railroader 0.6 game error encountered during v2.8 testing.
@@ -267,7 +264,6 @@ Do not install duplicate copies of the scripts. Back up your Unity project / ass
 
 **Steam:** remains a basic starter. Steam needs wheelset, tender and boiler authoring that cannot reliably be inferred from a generic FBX.
 
-**Out of scope:** importing animation clips and configuring `AnimationMap` (planned for 2.9). A brake animation reference without the matching map/clip will not function. See `TESTING.md` for the test flow.
 
 ## v2.9 — Animation Builder
 
@@ -288,5 +284,3 @@ Use **Railroader → Animation Builder** to automate animation *asset mapping* w
 - Clip playback requires Unity Generic (non-Legacy) FBX rig/animation import, correct Blender NLA export settings, and curves relative to the map GameObject. The builder warns about legacy clips and excludes them from automatic selection.
 - Always save and exit Prefab Mode before bulk editing; the builder blocks changes while a prefab stage is open to prevent stale Prefab Mode changes overwriting edits.
 - Existing user-defined `Definitions.json` values are not modified. Validate recognizes `{"objects":[...]}` and matches `./PrefabName` or this pack's domain-qualified model identifier.
-
-**This ZIP is an uncompiled Unity integration test build.** Back up test asset packs and check the Console. If the ADK's `AnimationMap` differs from the expected serialized list of `(name, AnimationClip)` pairs, the builder reports an error instead of silently guessing and rewriting it.

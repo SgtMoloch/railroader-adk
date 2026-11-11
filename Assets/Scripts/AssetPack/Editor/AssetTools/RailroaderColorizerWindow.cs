@@ -71,10 +71,11 @@ namespace Railroader.AssetTools
                 if (GUILayout.Button("Bake Colorizers", GUILayout.Height(33)))
                 {
                     bool confirm = EditorUtility.DisplayDialog("Update existing root prefab?",
-                        "This will OVERWRITE the existing prefab at\n" + bakeRootPath +
-                        "\n\nand update generated materials and " + pack +
-                        "/Definitions.json for " + carIdentifier + ". The editable copy under Authoring/ " +
-                        "is preserved, and file backups are created first.\n\n" +
+                        "This will update the Colorizer materials and MaterialMap on\n" + bakeRootPath +
+                        "\n\nThe existing game prefab hierarchy, colliders and other components " +
+                        "will be preserved and checked after saving. The Authoring/ copy remains untouched.\n\n" +
+                        "Generated materials and " + pack + "/Definitions.json will also be updated. " +
+                        "File backups are created first.\n\n" +
                         "Pull any changes made in the in-game Definition Editor before proceeding.",
                         "Bake / Update", "Cancel");
                     if (confirm)
@@ -97,7 +98,8 @@ namespace Railroader.AssetTools
             EditorGUILayout.LabelField("Railroader Colorizer Baker", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
                 "Create the pack and car definition with the ADK first. This tool keeps " +
-                "your editable prefab under Authoring/ and updates the EXISTING root prefab in place. " +
+                "your editable prefab under Authoring/ and updates only the Colorizer materials and mappings " +
+                "on the EXISTING root prefab (preserving colliders and other custom components). " +
                 "Only one game-facing prefab is produced. Pull any in-game Definitions edits before baking.", MessageType.Info);
             string previousPack = pack;
             pack = RailroaderAssetPackPicker.Draw("Asset Pack", pack);

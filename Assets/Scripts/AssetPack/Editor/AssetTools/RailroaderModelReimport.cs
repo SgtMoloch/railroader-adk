@@ -55,7 +55,7 @@ namespace Railroader.AssetTools
 
         private void DrawWindow()
         {
-            EditorGUILayout.LabelField("Railroader Model Reimport v3.0 Beta 1.5.3", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Railroader Model Reimport v3.0 Beta 1.5.5", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("Reimport an existing FBX and/or its Substance Painter textures " +
                 "without deleting, rebuilding, or resaving game and authoring prefabs. " +
                 "The FBX must stay at its original Unity path to keep its GUID and references.", MessageType.Info);
@@ -122,7 +122,7 @@ namespace Railroader.AssetTools
                     if (GUILayout.Button("Browse...", GUILayout.Width(90)))
                     {
                         string chosen = EditorUtility.OpenFilePanel("Choose updated FBX",
-                            RailroaderModelReimportService.InitialDirectory(sourceModel, absoluteTarget), "fbx");
+                            RailroaderModelReimportService.InitialDirectory(sourceModel, RailroaderAssetImporter.DesktopDirectory()), "fbx");
                         if (!string.IsNullOrEmpty(chosen))
                             sourceModel = chosen;
                     }
@@ -152,7 +152,7 @@ namespace Railroader.AssetTools
                     if (GUILayout.Button("Browse...", GUILayout.Width(90)))
                     {
                         string chosen = EditorUtility.OpenFolderPanel("Choose updated textures",
-                            RailroaderModelReimportService.InitialDirectory(sourceTextures, absoluteTarget), "");
+                            RailroaderModelReimportService.InitialDirectory(sourceTextures, RailroaderAssetImporter.TextureBrowseDirectory()), "");
                         if (!string.IsNullOrEmpty(chosen))
                             sourceTextures = chosen;
                     }
@@ -266,7 +266,9 @@ namespace Railroader.AssetTools
             string path = (candidate ?? "").Trim().Trim('"');
             if (Directory.Exists(path)) return path;
             if (File.Exists(path)) return Path.GetDirectoryName(Path.GetFullPath(path));
-            return File.Exists(fallback) ? Path.GetDirectoryName(fallback) : Application.dataPath;
+            if (Directory.Exists(fallback)) return fallback;
+            if (File.Exists(fallback)) return Path.GetDirectoryName(Path.GetFullPath(fallback));
+            return Application.dataPath;
         }
 
         internal static List<string> DependentPrefabs(string pack, string modelPath)

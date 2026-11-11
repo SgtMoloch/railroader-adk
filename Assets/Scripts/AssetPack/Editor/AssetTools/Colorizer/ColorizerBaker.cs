@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -16,7 +17,10 @@ namespace Railroader.AssetTools.Colorizer
     {
         private sealed class Assignment
         {
+            // Authoring owns the marker and the source material. The renderer
+            // receiving the baked material belongs to the EXISTING game prefab.
             public Renderer Renderer;
+            public Renderer OutputRenderer;
             public int Slot;
         }
 
@@ -49,7 +53,9 @@ namespace Railroader.AssetTools.Colorizer
             sourcePath = (sourcePath ?? "").Replace('\\', '/');
             if (source == null || string.IsNullOrWhiteSpace(sourcePath) ||
                 !sourcePath.EndsWith(".prefab", StringComparison.OrdinalIgnoreCase))
+            {
                 throw new InvalidOperationException("Bake from an authoring prefab asset, not a scene object.");
+            }
             if (!sourcePath.StartsWith(pack + "/Authoring/", StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException("The authoring prefab must be in the selected asset pack's Authoring/ folder.");
@@ -66,66 +72,91 @@ namespace Railroader.AssetTools.Colorizer
                 throw new InvalidOperationException("Info.json is not a native 0.6 pack manifest. A legacy UMM mod folder cannot be baked directly.");
             }
 
-            // Bake IN PLACE to the pack's existing root prefab. Authoring/ is a
-            // private editable backup; a second root-level prefab would appear
-            // as an extra model in Railroader's asset selection UI.
+            // The root game prefab is authoritative for its hierarchy, colliders,
+            // animations and all non-Colorizer components. NEVER replace it with
+            // a clone of Authoring/: the copies can diverge after the first bake.
             string prefabPath = pack + "/" + prefabName + ".prefab";
             if (AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath) == null)
+            {
                 throw new InvalidOperationException("Root prefab does not exist: " + prefabPath +
                     ". Import the model first, then create its Authoring copy.");
+            }
             string materialsFolder = pack + "/ColorizerMaterials-" + prefabName;
             string owner = "RailroaderAssetTools.Colorizer:" + carIdentifier;
-            var clone = Object.Instantiate(source);
-            // If we cloned a prefab ASSET, unpack only its outer wrapper, not the
-            // nested imported FBX. This avoids creating a variant of the authoring
-            // prefab while keeping the Blender -> FBX link on the child objects.
-            if (PrefabUtility.IsAnyPrefabInstanceRoot(clone))
-                PrefabUtility.UnpackPrefabInstance(clone, PrefabUnpackMode.OutermostRoot,
-                    InteractionMode.AutomatedAction);
-            clone.name = prefabName;
-            clone.transform.position = Vector3.zero;
-            clone.transform.rotation = Quaternion.identity;
-            List<string> changed = new List<string>();
+            var changed = new List<string>();
             string backupFolder = null;
+            GameObject output = null;
             try
             {
-                // Preserve the nested FBX prefab connection. The authoring markers
-                // are added overrides and are removed from this clone before saving.
-                // Do NOT UnpackAll: that severs the Blender reimport relationship.
-                foreach (var transform in clone.GetComponentsInChildren<Transform>(true))
+                // Load the *existing* prefab rather than starting from Authoring/.
+                // LoadPrefabContents retains nested FBX links and added overrides.
+                output = PrefabUtility.LoadPrefabContents(prefabPath);
+                if (output == null)
+                {
+                    throw new InvalidOperationException("Could not load the game prefab: " + prefabPath);
+                }
+                Dictionary<string, string> originalColliders = CaptureColliders(output);
+                foreach (var transform in source.GetComponentsInChildren<Transform>(true))
+                {
                     if (GameObjectUtility.GetMonoBehavioursWithMissingScriptCount(transform.gameObject) != 0)
                     {
-                        throw new InvalidOperationException("Missing scripts on " + transform.name + ". Repair them in the authoring prefab before baking.");
+                        throw new InvalidOperationException("Missing scripts on " + transform.name +
+                            ". Repair them in the authoring prefab before baking.");
                     }
-                var maps = clone.GetComponentsInChildren<MaterialMap>(true);
-                if (maps.Length > 1)
-                {
-                    throw new InvalidOperationException("Use only one MaterialMap in the prefab hierarchy. Found " + maps.Length + ".");
                 }
-                var map = maps.Length == 0 ? clone.AddComponent<MaterialMap>() : maps[0];
-                if (map.entries == null)
-                {
-                    map.entries = new List<MaterialMap.MapEntry>();
-                }
-                HashSet<string> mapNames = new HashSet<string>(StringComparer.Ordinal);
-                foreach (var entry in map.entries)
-                    if (string.IsNullOrWhiteSpace(entry.name) || entry.material == null || !mapNames.Add(entry.name))
-                    {
-                        throw new InvalidOperationException("Existing MaterialMap entries must have unique names and assigned materials.");
-                    }
 
-                var targets = GatherTargets(clone, materialsFolder);
+                var targets = GatherTargets(source, materialsFolder);
                 if (targets.Count == 0)
                 {
                     throw new InvalidOperationException("No enabled Custom Colorizer components found. Attach one to a mesh Renderer first.");
                 }
+                // Resolve *all* authoring marker destinations before touching any
+                // assets. If a model's structure has changed, refuse the bake rather
+                // than assigning a material to an unrelated mesh by accident.
+                foreach (var target in targets)
+                {
+                    foreach (var assignment in target.Assignments)
+                    {
+                        assignment.OutputRenderer = ResolveOutputRenderer(source.transform,
+                            output.transform, assignment.Renderer, assignment.Slot);
+                    }
+                }
+
+                var maps = output.GetComponentsInChildren<MaterialMap>(true);
+                if (maps.Length > 1)
+                {
+                    throw new InvalidOperationException("Use only one MaterialMap in the game prefab hierarchy. Found " + maps.Length + ".");
+                }
+                var map = maps.Length == 0 ? output.AddComponent<MaterialMap>() : maps[0];
+                if (map.entries == null)
+                {
+                    map.entries = new List<MaterialMap.MapEntry>();
+                }
+                // A repeated bake must replace its old generated map entries,
+                // not append duplicates. Keep manually authored entries intact.
+                map.entries = map.entries.Where(entry =>
+                    entry.material == null || !IsOwnedBy(entry.material, owner)).ToList();
+                HashSet<string> mapNames = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var entry in map.entries)
+                {
+                    if (string.IsNullOrWhiteSpace(entry.name) || entry.material == null || !mapNames.Add(entry.name))
+                    {
+                        throw new InvalidOperationException("Existing MaterialMap entries must have unique names and assigned materials.");
+                    }
+                }
                 HashSet<string> outputMaterials = new HashSet<string>(targets.Select(t => t.Path), StringComparer.OrdinalIgnoreCase);
-                var sourceMaterials = clone.GetComponentsInChildren<Renderer>(true).SelectMany(r => r.sharedMaterials)
-                    .Concat(map.entries.Select(e => e.material));
+                var sourceMaterials = source.GetComponentsInChildren<Renderer>(true).SelectMany(r => r.sharedMaterials)
+                    .Concat(source.GetComponentsInChildren<MaterialMap>(true)
+                        .SelectMany(m => m.entries ?? new List<MaterialMap.MapEntry>())
+                        .Select(e => e.material));
                 foreach (var sourceMaterial in sourceMaterials)
+                {
                     if (sourceMaterial != null && outputMaterials.Contains(AssetDatabase.GetAssetPath(sourceMaterial)))
+                    {
                         throw new InvalidOperationException("The authoring model references a generated output material: " + sourceMaterial.name +
                             ". Use the original source material, or duplicate it outside the generated material folder before baking.");
+                    }
+                }
                 foreach (var target in targets)
                 {
                     EnsureOwnedOrNew(target.Path, owner);
@@ -134,8 +165,7 @@ namespace Railroader.AssetTools.Colorizer
                         throw new InvalidOperationException("A generated material-map name already exists: " + target.Zone.MaterialName);
                     }
                 }
-                // Merge validates the native schema, duplicate slots/classes and existing ownership
-                // before any project file is changed.
+                // Validate the definition merge before writing any project files.
                 string merged = ColorizerDefinitionWriter.Merge(File.ReadAllText(definitionsPath),
                     carIdentifier, prefabName, targets.Select(t => t.Zone).ToArray(), generateSelectableStyle);
 
@@ -147,7 +177,6 @@ namespace Railroader.AssetTools.Colorizer
                 {
                     AssetDatabase.CreateFolder(pack, "ColorizerMaterials-" + prefabName);
                 }
-
                 foreach (var target in targets)
                 {
                     var material = AssetDatabase.LoadAssetAtPath<Material>(target.Path);
@@ -161,8 +190,6 @@ namespace Railroader.AssetTools.Colorizer
                         EditorUtility.CopySerialized(target.Source, material);
                     }
                     material.name = target.Zone.MaterialName;
-                    // Show the authored default in Unity too. Native RendererGroup replaces this
-                    // tint when the game applies styles, so this does not multiply the color twice.
                     if (!ColorUtility.TryParseHtmlString("#" + target.Zone.ColorHex, out var defaultColor))
                     {
                         throw new InvalidOperationException("Invalid default color: " + target.Zone.ColorHex);
@@ -175,46 +202,280 @@ namespace Railroader.AssetTools.Colorizer
                     material = AssetDatabase.LoadAssetAtPath<Material>(target.Path);
                     foreach (var assignment in target.Assignments)
                     {
-                        var slots = assignment.Renderer.sharedMaterials;
+                        var slots = assignment.OutputRenderer.sharedMaterials;
                         slots[assignment.Slot] = material;
-                        assignment.Renderer.sharedMaterials = slots;
+                        assignment.OutputRenderer.sharedMaterials = slots;
+                        // The renderer can be a child of a nested FBX prefab.
+                        // Persist the material override rather than losing it on save.
+                        if (PrefabUtility.IsPartOfPrefabInstance(assignment.OutputRenderer))
+                        {
+                            PrefabUtility.RecordPrefabInstancePropertyModifications(assignment.OutputRenderer);
+                        }
                     }
-                    // One MaterialMap entry / RendererGroup per logical material,
-                    // regardless of how many mesh slots share it.
                     map.entries.Add(new MaterialMap.MapEntry { name = target.Zone.MaterialName, material = material });
                 }
-                foreach (var marker in clone.GetComponentsInChildren<CustomColorizer>(true))
+                if (PrefabUtility.IsPartOfPrefabInstance(map))
+                {
+                    PrefabUtility.RecordPrefabInstancePropertyModifications(map);
+                }
+                // Game-facing prefabs should never contain editor authoring markers.
+                // Do not remove anything else, including collider GameObjects.
+                foreach (var marker in output.GetComponentsInChildren<CustomColorizer>(true))
                 {
                     Object.DestroyImmediate(marker);
                 }
-                var saved = PrefabUtility.SaveAsPrefabAsset(clone, prefabPath);
+                VerifyColliders(originalColliders, CaptureColliders(output));
+                var saved = PrefabUtility.SaveAsPrefabAsset(output, prefabPath);
                 if (saved == null)
                 {
                     throw new InvalidOperationException("Unity could not save the baked prefab.");
                 }
-                // The root prefab is an ADK asset, not a generated output owned
-                // by this tool. Preserve its existing importer metadata.
+                PrefabUtility.UnloadPrefabContents(output);
+                output = null;
+
+                // Detect Unity prefab remapping issues after serialization too.
+                // An unexpected collider loss automatically restores the backup.
+                var verification = PrefabUtility.LoadPrefabContents(prefabPath);
+                try
+                {
+                    VerifyColliders(originalColliders, CaptureColliders(verification));
+                    VerifyBakedMaterials(source.transform, verification.transform, targets);
+                }
+                finally
+                {
+                    PrefabUtility.UnloadPrefabContents(verification);
+                }
                 File.WriteAllText(definitionsPath, merged, new UTF8Encoding(false));
                 AssetDatabase.Refresh();
-                Selection.activeObject = saved;
+                Selection.activeObject = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
                 return "Baked " + targets.Sum(t => t.Assignments.Count) + " mesh slot(s) using " +
                     targets.Count + " material/control group(s).\n\nUpdated existing prefab: " + prefabPath +
+                    "\nPreserved and checked " + originalColliders.Count + " collider(s)." +
                     "\nUpdated: " + definitionsPath + "\n\nBuild this pack with Railroader > Asset Packs." +
                     (generateSelectableStyle ? " Select Custom Paint in the car's Customize window." : " Per-zone color controls remain available without a separate paint scheme.") +
                     "\n\nBackup: " + backupFolder;
             }
             catch
             {
+                if (output != null)
+                {
+                    PrefabUtility.UnloadPrefabContents(output);
+                }
                 if (backupFolder != null)
                 {
                     Restore(changed, backupFolder);
                 }
                 throw;
             }
-            finally
+        }
+
+        private static void VerifyBakedMaterials(Transform sourceRoot, Transform outputRoot,
+            List<Target> targets)
+        {
+            var maps = outputRoot.GetComponentsInChildren<MaterialMap>(true);
+            if (maps.Length != 1 || maps[0].entries == null)
             {
-                Object.DestroyImmediate(clone);
+                throw new InvalidOperationException("Baked MaterialMap was not saved correctly.");
             }
+            foreach (var target in targets)
+            {
+                var matches = maps[0].entries.Where(e => e.name == target.Zone.MaterialName &&
+                    e.material != null && string.Equals(AssetDatabase.GetAssetPath(e.material),
+                        target.Path, StringComparison.OrdinalIgnoreCase)).ToList();
+                if (matches.Count != 1)
+                {
+                    throw new InvalidOperationException("Baked MaterialMap entry missing or duplicated: " +
+                        target.Zone.MaterialName);
+                }
+                foreach (var assignment in target.Assignments)
+                {
+                    var renderer = ResolveOutputRenderer(sourceRoot, outputRoot,
+                        assignment.Renderer, assignment.Slot);
+                    string actual = AssetDatabase.GetAssetPath(renderer.sharedMaterials[assignment.Slot]);
+                    if (!string.Equals(actual, target.Path, StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new InvalidOperationException("Baked material override failed to save on '" +
+                            renderer.name + "' slot " + assignment.Slot + ".");
+                    }
+                }
+            }
+        }
+
+        private static bool IsOwnedBy(Material material, string owner)
+        {
+            string path = AssetDatabase.GetAssetPath(material);
+            var importer = string.IsNullOrEmpty(path) ? null : AssetImporter.GetAtPath(path);
+            return importer != null && importer.userData == owner;
+        }
+
+        // Match by name and occurrence among same-named siblings, not absolute
+        // sibling index. Extra collider objects added to the game prefab therefore
+        // cannot shift the renderer mapping. Missing or changed meshes fail safely.
+        private static Renderer ResolveOutputRenderer(Transform sourceRoot, Transform outputRoot,
+            Renderer sourceRenderer, int slot)
+        {
+            var path = new Stack<KeyValuePair<string, int>>();
+            Transform current = sourceRenderer.transform;
+            while (current != sourceRoot)
+            {
+                if (current.parent == null)
+                {
+                    throw new InvalidOperationException("Colorizer renderer is outside the authoring root: " + sourceRenderer.name);
+                }
+                int occurrence = 0;
+                for (int i = 0; i < current.GetSiblingIndex(); i++)
+                {
+                    if (current.parent.GetChild(i).name == current.name)
+                    {
+                        occurrence++;
+                    }
+                }
+                path.Push(new KeyValuePair<string, int>(current.name, occurrence));
+                current = current.parent;
+            }
+            Transform destination = outputRoot;
+            foreach (var step in path)
+            {
+                int occurrence = 0;
+                Transform matching = null;
+                for (int i = 0; i < destination.childCount; i++)
+                {
+                    var child = destination.GetChild(i);
+                    if (child.name == step.Key && occurrence++ == step.Value)
+                    {
+                        matching = child;
+                        break;
+                    }
+                }
+                if (matching == null)
+                {
+                    throw new InvalidOperationException("The game prefab no longer matches the authoring renderer hierarchy at '" +
+                        sourceRenderer.name + "'. Reconcile the model hierarchy before baking.");
+                }
+                destination = matching;
+            }
+            var sourceComponents = sourceRenderer.GetComponents<Renderer>()
+                .Where(r => r.GetType() == sourceRenderer.GetType()).ToList();
+            int rendererIndex = sourceComponents.IndexOf(sourceRenderer);
+            var outputComponents = destination.GetComponents<Renderer>()
+                .Where(r => r.GetType() == sourceRenderer.GetType()).ToList();
+            if (rendererIndex < 0 || rendererIndex >= outputComponents.Count)
+            {
+                throw new InvalidOperationException("Cannot match a Colorizer renderer on '" +
+                    sourceRenderer.name + "' in the existing game prefab.");
+            }
+            Renderer target = outputComponents[rendererIndex];
+            if (slot >= target.sharedMaterials.Length)
+            {
+                throw new InvalidOperationException("Material slot " + slot + " is missing from game renderer '" + target.name + "'.");
+            }
+            Mesh sourceMesh = GetMesh(sourceRenderer);
+            Mesh targetMesh = GetMesh(target);
+            if (sourceMesh != targetMesh)
+            {
+                throw new InvalidOperationException("Authoring and game prefab have different meshes at '" +
+                    sourceRenderer.name + "'. Update the authoring copy / FBX before baking.");
+            }
+            return target;
+        }
+
+        private static Mesh GetMesh(Renderer renderer)
+        {
+            if (renderer is SkinnedMeshRenderer skinned)
+            {
+                return skinned.sharedMesh;
+            }
+            var filter = renderer.GetComponent<MeshFilter>();
+            return filter == null ? null : filter.sharedMesh;
+        }
+
+        private static Dictionary<string, string> CaptureColliders(GameObject root)
+        {
+            var result = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var transform in root.GetComponentsInChildren<Transform>(true))
+            {
+                string path = ColliderPath(root.transform, transform);
+                var colliders = transform.GetComponents<Collider>();
+                for (int i = 0; i < colliders.Length; i++)
+                {
+                    var collider = colliders[i];
+                    string key = path + ":" + collider.GetType().FullName + ":" + i;
+                    // Collider data should not change during a material-only bake.
+                    string state = collider.enabled + ":" + collider.isTrigger + ":" +
+                        AssetDatabase.GetAssetPath(collider.sharedMaterial);
+                    if (collider is BoxCollider box)
+                    {
+                        state += ":" + FormatVector(box.center) + ":" + FormatVector(box.size);
+                    }
+                    else if (collider is SphereCollider sphere)
+                    {
+                        state += ":" + FormatVector(sphere.center) + ":" + FormatFloat(sphere.radius);
+                    }
+                    else if (collider is CapsuleCollider capsule)
+                    {
+                        state += ":" + FormatVector(capsule.center) + ":" + FormatFloat(capsule.radius) + ":" +
+                            FormatFloat(capsule.height) + ":" + capsule.direction;
+                    }
+                    else if (collider is MeshCollider mesh)
+                    {
+                        state += ":" + mesh.convex + ":" + AssetDatabase.GetAssetPath(mesh.sharedMesh) +
+                            ":" + (mesh.sharedMesh == null ? "" : mesh.sharedMesh.name);
+                    }
+                    result.Add(key, state);
+                }
+            }
+            return result;
+        }
+
+        private static string FormatFloat(float value)
+        {
+            return value.ToString("R", CultureInfo.InvariantCulture);
+        }
+
+        private static string FormatVector(Vector3 value)
+        {
+            return FormatFloat(value.x) + "," + FormatFloat(value.y) + "," + FormatFloat(value.z);
+        }
+
+        private static string ColliderPath(Transform root, Transform target)
+        {
+            var segments = new Stack<string>();
+            while (target != root)
+            {
+                if (target.parent == null)
+                {
+                    throw new InvalidOperationException("Collider is outside the game prefab root.");
+                }
+                int occurrence = 0;
+                for (int i = 0; i < target.GetSiblingIndex(); i++)
+                {
+                    if (target.parent.GetChild(i).name == target.name)
+                    {
+                        occurrence++;
+                    }
+                }
+                segments.Push(target.name + "[" + occurrence + "]");
+                target = target.parent;
+            }
+            return "root/" + string.Join("/", segments.ToArray());
+        }
+
+        private static void VerifyColliders(Dictionary<string, string> before, Dictionary<string, string> after)
+        {
+            if (before.Count == after.Count && before.All(pair =>
+                after.TryGetValue(pair.Key, out var state) && state == pair.Value))
+            {
+                return;
+            }
+            string missing = string.Join("\n", before.Keys.Except(after.Keys).Take(12));
+            string changed = string.Join("\n", before.Keys.Intersect(after.Keys)
+                .Where(key => before[key] != after[key]).Take(12));
+            string added = string.Join("\n", after.Keys.Except(before.Keys).Take(12));
+            throw new InvalidOperationException("Colorizer bake would change the game's colliders (" +
+                before.Count + " before, " + after.Count + " after). Changes have been rolled back." +
+                (missing.Length == 0 ? "" : "\nMissing: " + missing) +
+                (changed.Length == 0 ? "" : "\nModified: " + changed) +
+                (added.Length == 0 ? "" : "\nAdded: " + added));
         }
 
         private static List<Target> GatherTargets(GameObject root, string materialsFolder)

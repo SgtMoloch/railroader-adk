@@ -13,6 +13,24 @@ namespace Railroader.AssetTools
     // Editor-only helpers shared by the two tools. No dependency on ADK implementation details.
     internal static class RailroaderAssetPackTools
     {
+        // Unity redraws editor windows frequently (Layout, Repaint, mouse events).
+        // Do not rescan every FBX and pack directory on each OnGUI call.
+        private static List<string> cachedPacks;
+        private static readonly Dictionary<string, List<string>> cachedModels =
+            new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+        static RailroaderAssetPackTools()
+        {
+            EditorApplication.projectChanged += InvalidateAssetLists;
+        }
+
+        internal static void InvalidateAssetLists()
+        {
+            cachedPacks = null;
+            cachedModels.Clear();
+            RailroaderAssetPackPicker.InvalidateCache();
+        }
+
         internal const string PackRoot = "Assets/AssetPacks";
         internal const string MetallicShader = "Railroader/Standard Car Shader Metallic (Shared)";
         internal const string SpecularShader = "Railroader/Standard Car Shader Specular (Shared)";
@@ -162,22 +180,26 @@ namespace Railroader.AssetTools
 
         internal static List<string> Packs()
         {
+            if (cachedPacks != null)
+            {
+                return cachedPacks;
+            }
             List<string> paths = new List<string>();
             string root = Absolute(PackRoot);
-            if (!Directory.Exists(root))
+            if (Directory.Exists(root))
             {
-                return paths;
-            }
-            foreach (string infoFile in Directory.GetFiles(root, "Info.json", SearchOption.AllDirectories))
-            {
-                string path = AssetPathFromAbsolute(Path.GetDirectoryName(infoFile));
-                if (path != null && ValidPack(path))
+                foreach (string infoFile in Directory.GetFiles(root, "Info.json", SearchOption.AllDirectories))
                 {
-                    paths.Add(path);
+                    string path = AssetPathFromAbsolute(Path.GetDirectoryName(infoFile));
+                    if (path != null && ValidPack(path))
+                    {
+                        paths.Add(path);
+                    }
                 }
             }
             paths.Sort(StringComparer.OrdinalIgnoreCase);
-            return paths;
+            cachedPacks = paths;
+            return cachedPacks;
         }
 
         // UI identity comes from Info.json, not the (arbitrary) pack directory name.
@@ -235,21 +257,27 @@ namespace Railroader.AssetTools
 
         internal static List<string> Models(string pack)
         {
+            if (string.IsNullOrEmpty(pack))
+            {
+                return new List<string>();
+            }
+            if (cachedModels.TryGetValue(pack, out List<string> models))
+            {
+                return models;
+            }
             string modelFolder = pack + "/Model";
             string modelsFolder = pack + "/Models";
             var roots = new[] { modelFolder, modelsFolder }
                 .Where(x => Directory.Exists(Absolute(x))).ToArray();
-            if (roots.Length == 0)
-            {
-                return new List<string>();
-            }
-            return AssetDatabase.FindAssets("t:Model", roots)
+            models = roots.Length == 0 ? new List<string>() : AssetDatabase.FindAssets("t:Model", roots)
                 .Select(AssetDatabase.GUIDToAssetPath)
                 .Where(p => (p.EndsWith(".fbx", StringComparison.OrdinalIgnoreCase) ||
                              p.EndsWith(".obj", StringComparison.OrdinalIgnoreCase)) &&
                              AssetImporter.GetAtPath(p) is ModelImporter)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToList();
+            cachedModels[pack] = models;
+            return models;
         }
 
         // Root prefab identifiers are per model, independent of the asset pack name.
@@ -266,7 +294,7 @@ namespace Railroader.AssetTools
         /// workflow) or by a nested FBX inside a regular prefab (older imports).
         /// Check the ROOT as well as children: a variant may have no child objects.
         /// </summary>
-        private static bool PrefabReferencesModel(GameObject root, string modelPath)
+        internal static bool PrefabReferencesModel(GameObject root, string modelPath)
         {
             foreach (Transform transform in root.GetComponentsInChildren<Transform>(true))
             {
