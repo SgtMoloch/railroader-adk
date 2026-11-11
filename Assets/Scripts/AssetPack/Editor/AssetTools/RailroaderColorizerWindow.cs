@@ -52,6 +52,7 @@ namespace Railroader.AssetTools
 
         private void OnGUI()
         {
+            RailroaderADKToolsVersion.DrawHeader("Colorizer Baker");
             canBake = false;
             // Scroll the entire configuration area, not just the parts list.
             // Bake remains outside the scroll view so it is ALWAYS reachable.
@@ -95,7 +96,6 @@ namespace Railroader.AssetTools
 
         private void DrawConfiguration()
         {
-            EditorGUILayout.LabelField("Railroader Colorizer Baker", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
                 "Create the pack and car definition with the ADK first. This tool keeps " +
                 "your editable prefab under Authoring/ and updates only the Colorizer materials and mappings " +

@@ -155,6 +155,7 @@ namespace Railroader.AssetTools
 
         private void OnGUI()
         {
+            RailroaderADKToolsVersion.DrawHeader("Asset Importer");
             using (var scroll = new EditorGUILayout.ScrollViewScope(windowScroll, GUILayout.ExpandHeight(true)))
             {
                 windowScroll = scroll.scrollPosition;
@@ -164,7 +165,6 @@ namespace Railroader.AssetTools
 
         private void DrawContents()
         {
-            EditorGUILayout.LabelField("Railroader Asset Importer v3.0 Beta 1.5.8", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("Import a new FBX/OBJ, or create an additional livery from an FBX " +
                 "already in this pack. Asset packs must first be created in the ADK.", MessageType.Info);
             if (GUILayout.Button("Reimport an Existing FBX / Textures..."))

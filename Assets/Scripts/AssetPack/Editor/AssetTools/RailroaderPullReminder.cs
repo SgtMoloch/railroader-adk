@@ -527,7 +527,7 @@ namespace Railroader.AssetTools
 
         private void OnGUI()
         {
-            EditorGUILayout.LabelField("Asset Pack Pull Reminder", EditorStyles.boldLabel);
+            RailroaderADKToolsVersion.DrawHeader("Asset Pack Pull Reminder");
             EditorGUILayout.HelpBox("Checks loaded ADK packs for newer, differing data files in " +
                 "Railroader's ModDev directory. Checks on return to Unity and about every 30 seconds. " +
                 "It does not change imported models or prefab assets.", MessageType.Info);

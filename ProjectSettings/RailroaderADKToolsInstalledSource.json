@@ -1,0 +1,8 @@
+{
+    "schemaVersion": 1,
+    "version": "Beta1.5.9",
+    "managedDirectories": [
+        "Assets/Scripts/AssetPack/Editor/AssetTools",
+        "Assets/Scripts/AssetPack/Authoring/Colorizer"
+    ]
+}

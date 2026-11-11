@@ -43,7 +43,7 @@ namespace Railroader.AssetTools
 
         private void OnGUI()
         {
-            EditorGUILayout.LabelField("Railroader Material Builder v3.0 Beta 1.5", EditorStyles.boldLabel);
+            RailroaderADKToolsVersion.DrawHeader("Material Builder");
             selectedTab = GUILayout.Toolbar(selectedTab, new[] { "Build / Map Materials", "Reimport Textures" });
             EditorGUILayout.Space();
 

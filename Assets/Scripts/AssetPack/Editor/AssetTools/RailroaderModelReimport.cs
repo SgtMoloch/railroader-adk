@@ -46,6 +46,7 @@ namespace Railroader.AssetTools
 
         private void OnGUI()
         {
+            RailroaderADKToolsVersion.DrawHeader("Model Reimport");
             using (var view = new EditorGUILayout.ScrollViewScope(scroll))
             {
                 scroll = view.scrollPosition;
@@ -55,7 +56,6 @@ namespace Railroader.AssetTools
 
         private void DrawWindow()
         {
-            EditorGUILayout.LabelField("Railroader Model Reimport v3.0 Beta 1.5.5", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("Reimport an existing FBX and/or its Substance Painter textures " +
                 "without deleting, rebuilding, or resaving game and authoring prefabs. " +
                 "The FBX must stay at its original Unity path to keep its GUID and references.", MessageType.Info);

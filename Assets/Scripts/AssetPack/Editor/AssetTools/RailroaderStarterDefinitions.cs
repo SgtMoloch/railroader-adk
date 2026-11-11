@@ -391,6 +391,7 @@ namespace Railroader.AssetTools
 
         private void OnGUI()
         {
+            RailroaderADKToolsVersion.DrawHeader("Definition Starter");
             using (var scroll = new EditorGUILayout.ScrollViewScope(windowScroll, GUILayout.ExpandHeight(true)))
             {
                 windowScroll = scroll.scrollPosition;
@@ -400,7 +401,6 @@ namespace Railroader.AssetTools
 
         private void DrawContents()
         {
-            EditorGUILayout.LabelField("Railroader Definition Starter v3.0 Beta 1.5.2", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("Creates a starter definition for an existing root prefab. " +
                 "The current 0.6 game expects a JSON object containing an 'objects' array, " +
                 "despite the published docs showing a top-level array. " +

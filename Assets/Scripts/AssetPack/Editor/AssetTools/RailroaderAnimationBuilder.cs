@@ -443,10 +443,10 @@ namespace Railroader.AssetTools
 
         private void OnGUI()
         {
+            RailroaderADKToolsVersion.DrawHeader("Animation Builder");
             using (var view = new EditorGUILayout.ScrollViewScope(scroll, GUILayout.ExpandHeight(true)))
             {
                 scroll = view.scrollPosition;
-                EditorGUILayout.LabelField("Railroader Animation Builder v3.0 Beta 1.2", EditorStyles.boldLabel);
                 EditorGUILayout.HelpBox("Detect FBX clips and set up AnimationMap + Animator on the " +
                     "animated model root. Existing mappings are retained. This does not create definition " +
                     "components, Animator Controllers or animation curves.", MessageType.Info);

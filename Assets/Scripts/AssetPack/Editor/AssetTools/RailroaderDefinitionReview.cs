@@ -28,7 +28,7 @@ namespace Railroader.AssetTools
 
         private void OnGUI()
         {
-            EditorGUILayout.LabelField("Review new Railroader definition", EditorStyles.boldLabel);
+            RailroaderADKToolsVersion.DrawHeader("Definition Review");
             EditorGUILayout.HelpBox("Nothing in Definitions.json will be written until you select Create. " +
                 "Existing definitions are never overwritten by the starter.", MessageType.Info);
             if (!string.IsNullOrWhiteSpace(notes))
