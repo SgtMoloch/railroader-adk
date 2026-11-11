@@ -49,3 +49,5 @@ Assets/AssetPacks/*
 Assets/AssetPackBuildAll
 Assets/StreamingAssets/AssetPacks/*
 *.csproj.meta
+
+dist/*
